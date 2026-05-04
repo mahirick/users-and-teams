@@ -6,6 +6,17 @@ the project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [v2.0.3] — 2026-05-04
+
+### Changed
+- Widened `better-sqlite3` peer-dependency range from `^11.0.0` to `^11.0.0 || ^12.0.0`. Verified against `better-sqlite3@12.9.0` — package code uses the stable `Database`, `db.prepare`, `db.pragma`, `db.transaction`, `db.exec` surface which is unchanged between v11 and v12.
+- Widened `@fastify/cookie` peer-dependency range from `^11.0.0` to `^11.0.0 || ^12.0.0`. No v12 has been released yet; this is forward-compat only.
+
+### Notes
+ScoreTracker hit an `ERESOLVE` peer conflict because they use `better-sqlite3@^12` and the previous peer pin was `^11.0.0`. This unblocks them without `--legacy-peer-deps`.
+
+---
+
 ## [v2.0.2] — 2026-05-04
 
 ### Fixed

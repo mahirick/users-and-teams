@@ -1,6 +1,6 @@
 {
   "name": "@mahirick/users-and-teams",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Self-hosted user accounts, magic-link auth, sessions, teams, and admin — drops into any Fastify backend.",
   "license": "MIT",
   "author": "Rick (Mahisoft)",
@@ -49,8 +49,8 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "peerDependencies": {
-    "@fastify/cookie": "^11.0.0",
-    "better-sqlite3": "^11.0.0",
+    "@fastify/cookie": "^11.0.0 || ^12.0.0",
+    "better-sqlite3": "^11.0.0 || ^12.0.0",
     "fastify": "^5.0.0",
     "nodemailer": "^8.0.7",
     "pg": "^8.0.0",
