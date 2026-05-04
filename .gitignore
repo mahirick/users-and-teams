@@ -20,7 +20,8 @@ demo/backend/.env
 .vscode/
 .idea/
 .DS_Store
-uat-test/
+# Don't ignore uat-test/ — it's a useful external-consumer test app
+# that ships with the repo. (Its own .gitignore handles node_modules/db/env.)
 
 # screenshots from Playwright smoke tests
 *.png

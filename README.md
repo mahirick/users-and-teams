@@ -270,7 +270,7 @@ npm run dev:frontend     # Vite + React on :5273
 npm run update           # rebuilds the package + reinstalls
 ```
 
-Sign in with `admin@test.local` to see the Admin tab. `uat-test/` is gitignored from the package repo.
+Sign in with `admin@test.local` to see the Admin tab.
 
 ## Customizing error handling
 
@@ -312,7 +312,7 @@ Last-set-wins per Fastify scope rules.
 | [`CLAUDE.md`](./CLAUDE.md) | AI-agent / contributor deep-dive. Architecture rules, conventions, common tasks, what NOT to do. **Read before any non-trivial change.** |
 | [`SPEC.md`](./SPEC.md) | Original design spec with all open questions resolved. Historical. |
 | [`PLAN.md`](./PLAN.md) | Six-stage build plan. Each stage maps to one commit on `main`. Historical. |
-| [`uat-test/README.md`](./uat-test/README.md) | (Local only — gitignored.) How to run the external-consumer test app. |
+| [`uat-test/README.md`](./uat-test/README.md) | How to run the external-consumer test app (real `file:..` install). |
 
 ## License
 

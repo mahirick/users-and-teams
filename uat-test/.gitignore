@@ -1,0 +1,4 @@
+node_modules/
+backend/test.db
+backend/test.db-*
+.env

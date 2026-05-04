@@ -72,7 +72,6 @@ demo/                          # in-repo demo (Vite alias to src/, fast iteratio
 └── frontend/                   # Vite + React SPA
 
 uat-test/                       # external-consumer test (file:.. dep, real install)
-                                # gitignored; only present locally
 
 tests/                          # currently empty — all tests live next to source
 ```
