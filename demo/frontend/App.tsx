@@ -5,7 +5,17 @@
 //   /verify-result → VerifyResultPage (reads ?status & ?reason from URL)
 
 import { useEffect, useState } from 'react';
-import { LoginForm, AccountMenu, VerifyResult } from '@mahirick/users-and-teams/react';
+import {
+  LoginForm,
+  AccountMenu,
+  VerifyResult,
+  TeamSwitcher,
+  TeamMembersList,
+  InviteForm,
+  AcceptInvite,
+  useTeams,
+  type TeamMembership,
+} from '@mahirick/users-and-teams/react';
 
 function getRoute(): string {
   return window.location.pathname || '/';
@@ -31,9 +41,14 @@ export function App() {
       <main style={{ padding: '32px 24px' }}>
         {route === '/login' && <LoginPage />}
         {route === '/verify-result' && <VerifyResultPage />}
-        {(route === '/' || (route !== '/login' && route !== '/verify-result')) && (
-          <Home navigate={navigate} />
-        )}
+        {route === '/my-teams' && <TeamsPage />}
+        {route === '/invites/accept' && <AcceptInvitePage />}
+        {route === '/' && <Home navigate={navigate} />}
+        {route !== '/' &&
+          route !== '/login' &&
+          route !== '/verify-result' &&
+          route !== '/my-teams' &&
+          route !== '/invites/accept' && <Home navigate={navigate} />}
       </main>
     </div>
   );
@@ -53,7 +68,21 @@ function Header() {
       <a href="/" style={{ color: '#06b6d4', fontWeight: 600, textDecoration: 'none' }}>
         users-and-teams demo
       </a>
-      <AccountMenu signInHref="/login" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <TeamSwitcher
+          onSelect={(m: TeamMembership) => {
+            window.history.pushState({}, '', `/my-teams?id=${m.team.id}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }}
+        />
+        <a
+          href="/my-teams"
+          style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}
+        >
+          Teams
+        </a>
+        <AccountMenu signInHref="/login" />
+      </div>
     </header>
   );
 }
@@ -77,6 +106,67 @@ function VerifyResultPage() {
   };
   if (reason !== undefined) props.reason = reason;
   return <VerifyResult {...props} />;
+}
+
+function TeamsPage() {
+  const { teams, loading } = useTeams();
+  const params = new URLSearchParams(window.location.search);
+  const activeId = params.get('id') ?? teams[0]?.team.id;
+  const active = teams.find((m) => m.team.id === activeId) ?? teams[0];
+
+  if (loading) return <p style={{ color: '#94a3b8' }}>Loading…</p>;
+
+  if (!active) {
+    return (
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <h1 style={{ marginBottom: 16, fontWeight: 600 }}>Teams</h1>
+        <p style={{ color: '#94a3b8' }}>
+          You're not in any teams yet. Create one from the Teams switcher in the header.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      <h1 style={{ margin: '0 0 4px', fontWeight: 600 }}>{active.team.name}</h1>
+      <p style={{ margin: '0 0 24px', color: '#94a3b8', fontSize: 13 }}>
+        /{active.team.slug} · you are <strong>{active.role}</strong>
+      </p>
+
+      <section style={{ marginBottom: 32 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Members</h2>
+        <TeamMembersList teamId={active.team.id} />
+      </section>
+
+      {(active.role === 'owner' || active.role === 'admin') && (
+        <section
+          style={{
+            background: '#14181b',
+            border: '1px solid #2a3138',
+            borderRadius: 10,
+            padding: 16,
+          }}
+        >
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Invite a teammate</h2>
+          <InviteForm teamId={active.team.id} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+function AcceptInvitePage() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token') ?? '';
+  if (!token) {
+    return (
+      <div style={{ textAlign: 'center', color: '#94a3b8' }}>
+        Missing invite token in URL.
+      </div>
+    );
+  }
+  return <AcceptInvite token={token} redirectTo="/my-teams" loginHref="/login" />;
 }
 
 function Home({ navigate }: { navigate: (p: string) => void }) {

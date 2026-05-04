@@ -12,3 +12,8 @@ export {
 export { LoginForm, type LoginFormProps } from './ui/components/LoginForm.js';
 export { AccountMenu, type AccountMenuProps } from './ui/components/AccountMenu.js';
 export { VerifyResult, type VerifyResultProps } from './ui/components/VerifyResult.js';
+export { TeamSwitcher, type TeamSwitcherProps } from './ui/components/TeamSwitcher.js';
+export { InviteForm, type InviteFormProps } from './ui/components/InviteForm.js';
+export { TeamMembersList, type TeamMembersListProps } from './ui/components/TeamMembersList.js';
+export { AcceptInvite, type AcceptInviteProps } from './ui/components/AcceptInvite.js';
+export { useTeams, type TeamMembership, type PublicTeam, type UseTeamsResult } from './ui/hooks/useTeams.js';

@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { ProviderConfigContext } from './provider-internal.js';
 
 export interface PublicUser {
   id: string;
@@ -46,7 +47,13 @@ export function UsersAndTeamsProvider({
   apiBase = '',
   fetch: fetchProp,
 }: UsersAndTeamsProviderProps) {
-  const fetchFn = fetchProp ?? globalThis.fetch.bind(globalThis);
+  // Memoize the resolved fetch so its identity is stable across renders.
+  // Otherwise hooks that depend on it (useAuth, useTeams) would refetch on
+  // every parent render.
+  const fetchFn = useMemo(
+    () => fetchProp ?? globalThis.fetch.bind(globalThis),
+    [fetchProp],
+  );
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -115,7 +122,13 @@ export function UsersAndTeamsProvider({
     [user, loading, refresh, requestLink, logout, logoutAll],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  const config = useMemo(() => ({ apiBase, fetch: fetchFn }), [apiBase, fetchFn]);
+
+  return (
+    <ProviderConfigContext.Provider value={config}>
+      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+    </ProviderConfigContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {

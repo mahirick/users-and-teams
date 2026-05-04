@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/auth': { target: 'http://127.0.0.1:3000', changeOrigin: false },
       '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      '/teams': { target: 'http://127.0.0.1:3000', changeOrigin: false },
     },
   },
   resolve: {

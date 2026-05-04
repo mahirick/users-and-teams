@@ -1,0 +1,18 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "users-and-teams demo" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]:
+      - link "Teams" [ref=e7] [cursor=pointer]:
+        - /url: /my-teams
+      - button "Alice" [ref=e9] [cursor=pointer]:
+        - generic [ref=e10]: A
+        - generic [ref=e11]: Alice
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - heading "Demo home" [level=1] [ref=e14]
+      - paragraph [ref=e15]: Sign in to test the auth flow. The backend logs the magic link to its terminal — copy and paste the URL into your browser.
+      - generic [ref=e16]:
+        - heading "Protected route response" [level=2] [ref=e17]
+        - generic [ref=e18]: "{ \"message\": \"Hello, Alice!\", \"user\": { \"id\": \"019df3e4-0d7e-74c1-815b-228d4b67dad4\", \"email\": \"alice@example.com\", \"displayName\": \"Alice\", \"role\": \"user\", \"status\": \"active\", \"createdAt\": 1777913302398, \"lastSeenAt\": 1777913302398 } }"
+      - button "Go to /login" [ref=e19] [cursor=pointer]

@@ -15,6 +15,7 @@ import {
   createSqliteRepository,
   resendTransport,
   runMigrations,
+  teamsPlugin,
   type EmailTransport,
 } from '../../src/index.js';
 
@@ -88,6 +89,14 @@ await app.register(authPlugin, {
   // After verify, redirect back to the SPA's verify-result route
   verifySuccessRedirect: `${siteUrl}/verify-result?status=success`,
   verifyErrorRedirect: `${siteUrl}/verify-result?status=error`,
+});
+
+await app.register(teamsPlugin, {
+  repository,
+  email,
+  siteUrl,
+  siteName,
+  inviteTtlDays: 7,
 });
 
 // Sample protected route — proves request.user works in consumer-defined routes.

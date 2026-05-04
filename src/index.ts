@@ -37,3 +37,26 @@ export { generateToken, hashToken } from './auth/tokens.js';
 
 // React UI lives at @mahirick/users-and-teams/react — keeps node:crypto and
 // fastify out of browser bundles when consumers only need the UI side.
+
+// Teams module
+export { teamsPlugin, type TeamsPluginOptions } from './teams/plugin.js';
+export {
+  createTeam,
+  inviteMember,
+  acceptInvite,
+  listMyTeams,
+  listMembers,
+  updateMemberRole,
+  removeMember,
+  transferOwnership,
+  deleteTeam,
+  editTeam,
+} from './teams/operations.js';
+export {
+  canDeleteTeam,
+  canEditTeam,
+  canInvite,
+  canRemoveMember,
+  canTransferOwnership,
+  canUpdateMemberRole,
+} from './teams/permissions.js';
