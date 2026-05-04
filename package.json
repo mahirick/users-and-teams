@@ -1,0 +1,69 @@
+{
+  "name": "@mahirick/users-and-teams",
+  "version": "0.0.0",
+  "description": "Self-hosted user accounts, magic-link auth, sessions, teams, and admin — drops into any Fastify backend.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SPEC.md",
+    "PLAN.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/ui/styles.css dist/styles.css",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "demo:backend": "tsx demo/backend/index.ts",
+    "demo:frontend": "vite --config demo/frontend/vite.config.ts",
+    "demo:reset": "rm -f demo/backend/demo.db"
+  },
+  "peerDependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "better-sqlite3": "^11.0.0",
+    "fastify": "^5.0.0",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@fastify/cookie": { "optional": true },
+    "better-sqlite3": { "optional": true },
+    "fastify": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true }
+  },
+  "dependencies": {
+    "uuidv7": "^1.0.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "better-sqlite3": "^11.5.0",
+    "fastify": "^5.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

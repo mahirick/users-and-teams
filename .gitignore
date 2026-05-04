@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+.tsbuildinfo
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+
+# package artifacts
+*.tgz
+
+# demo runtime
+demo/backend/demo.db
+demo/backend/demo.db-*
+demo/backend/.env
+
+# editor
+.vscode/
+.idea/
+.DS_Store
