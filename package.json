@@ -1,8 +1,18 @@
 {
   "name": "@mahirick/users-and-teams",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Self-hosted user accounts, magic-link auth, sessions, teams, and admin — drops into any Fastify backend.",
-  "private": true,
+  "license": "MIT",
+  "author": "Rick (Mahisoft)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mahirick/users-and-teams.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "private": false,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -31,7 +41,8 @@
     "lint": "tsc --noEmit",
     "demo:backend": "tsx demo/backend/index.ts",
     "demo:frontend": "vite --config demo/frontend/vite.config.ts",
-    "demo:reset": "rm -f demo/backend/demo.db"
+    "demo:reset": "rm -f demo/backend/demo.db",
+    "prepublishOnly": "npm run build && npm test"
   },
   "peerDependencies": {
     "@fastify/cookie": "^11.0.0",

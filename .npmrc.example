@@ -1,0 +1,11 @@
+# Copy to .npmrc in your consumer project to install @mahirick/users-and-teams
+# from GitHub Packages.
+#
+# 1. Create a GitHub personal access token with `read:packages` scope.
+# 2. Replace YOUR_GITHUB_PAT below with that token (or use the gh-actions
+#    secrets mechanism for CI).
+# 3. Commit .npmrc but *never* with the real token in it. Use the
+#    NPM_TOKEN env var via `${NPM_TOKEN}` syntax (npm ≥ 7).
+
+@mahirick:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NPM_TOKEN}
