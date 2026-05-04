@@ -38,9 +38,28 @@ Your app now has `/auth/*`, `/teams/*`, `/admin/*`, plus `request.user` decorate
 
 ## Install
 
+The package isn't on the public npm registry yet. Install directly from GitHub — npm clones the repo, runs the `prepare` script which builds `dist/` on your machine, and you're set:
+
 ```bash
-npm install @mahirick/users-and-teams
+# Pin to a tag (recommended)
+npm install github:mahirick/users-and-teams#v2.0.0
+
+# Or track main (cutting-edge)
+npm install github:mahirick/users-and-teams
+
+# Equivalent long-form
+npm install git+https://github.com/mahirick/users-and-teams.git#v2.0.0
 ```
+
+The first install takes ~30s the first time (clone + tsc build); subsequent installs are cached and fast. Your `package.json` ends up with a line like:
+
+```json
+"@mahirick/users-and-teams": "github:mahirick/users-and-teams#v2.0.0"
+```
+
+To upgrade to a newer tag later, just bump the ref and `npm install` again.
+
+> Once the package is published to npm, `npm install @mahirick/users-and-teams` will be the canonical path. The wiring below works identically for both install methods.
 
 Then install the **peer dependencies you actually use**. They're all marked optional, so you only pay for what you need:
 
