@@ -2,13 +2,15 @@
 
 A reusable npm package for self-hosted user accounts and team management. Drops into any Fastify backend with a few lines of config.
 
+> **Integrating into your app?** Read [`INTEGRATION.md`](./INTEGRATION.md) — written for both humans and AI coding agents, with a copy-paste backend skeleton, decision tree for picking adapters, and a snippet to drop into your consumer's CLAUDE.md / AGENTS.md.
+
 - 🔐 **Magic-link auth** — email-based, opaque session tokens in HttpOnly cookies, no passwords, no JWT.
-- 👥 **Teams** — anyone can create one; the creator is the team **Admin**, everyone else is a **User**. Add by email — existing users join immediately, unknown emails get a magic-link signup that auto-adds them on first login (iMessage-style).
+- 👥 **Teams** — anyone can create one; the creator is the team **Admin**, everyone else is a **User**. Add by email — existing users join immediately, unknown emails get a one-click magic link that creates the account and joins the team in one step (iMessage-style).
 - 🛡️ **Owner role** — system-wide superuser with cross-team admin powers, user moderation, and a full audit log.
-- 🖼 **Avatars** — Apple-style initials-on-color circles, deterministically derived from id and name. No upload, no binary storage.
-- 🎨 **React UI** — drop-in components (`<LoginForm>`, `<AccountMenu>`, `<TeamSwitcher>`, `<TeamMembersList>`, `<Avatar>`, `<AdminUsersTable>`, …) themed via CSS variables.
-- 🗄️ **Pluggable storage** — SQLite (`better-sqlite3`) and in-memory adapters; Postgres planned.
-- 📨 **Pluggable email** — Console (dev) and Resend (prod) transports; SMTP planned.
+- 🖼 **Avatars** — Apple-style initials-on-color circles by default, with optional photo upload via a pluggable `AvatarStore` (filesystem default; bring your own for S3/R2). Drag-drop UI included.
+- 🎨 **React UI** — drop-in components (`<LoginForm>`, `<AccountMenu>`, `<TeamSwitcher>`, `<TeamProfile>`, `<TeamMembersList>`, `<PendingInvitesList>`, `<Avatar>`, `<AvatarUploader>`, `<AdminUsersTable>`, `<AuditLog>`) themed via CSS variables. Light + dark theme via `prefers-color-scheme`.
+- 🗄️ **Pluggable storage** — SQLite, in-memory, and Postgres adapters all implementing the same `Repository` contract.
+- 📨 **Pluggable email** — Console (dev), Resend, and SMTP (`nodemailer`) transports.
 
 ## Architecture at a glance
 

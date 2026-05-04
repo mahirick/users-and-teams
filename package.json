@@ -30,6 +30,7 @@
   "files": [
     "dist",
     "README.md",
+    "INTEGRATION.md",
     "SPEC.md",
     "PLAN.md"
   ],
