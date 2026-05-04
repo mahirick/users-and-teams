@@ -41,7 +41,11 @@ export {
 } from './email/templates.js';
 
 // Auth module
-export { authPlugin, type AuthPluginOptions } from './auth/plugin.js';
+export {
+  authPlugin,
+  type AuthPluginOptions,
+  type AvatarProcessor,
+} from './auth/plugin.js';
 export { requestMagicLink, type RequestMagicLinkInput } from './auth/magic-link.js';
 export {
   verifyMagicLinkAndCreateSession,

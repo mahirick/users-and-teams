@@ -5,7 +5,7 @@ Scope: server-side package code (`src/`), email transports, avatar uploads, the 
 
 ## TL;DR
 
-No high-severity findings. Five medium-priority gaps worth tightening before scaling consumers (`M1`–`M5`). The package's overall security posture is solid: parameterized queries throughout, opaque session tokens hashed at rest, single shared error mapper that doesn't leak stack traces, and a magic-link auth flow with rate limiting.
+No high-severity findings. M1 (avatar processing hook) and M3 (error-message echo stripping) **resolved** in the follow-up commit; M2/M4/M5 remain open as documented limitations. The package's overall security posture is solid: parameterized queries throughout, opaque session tokens hashed at rest, single shared error mapper, and a magic-link auth flow with rate limiting.
 
 `npm audit --omit dev` reports **0 vulnerabilities** in production dependencies. Five moderate findings exist in dev-only deps (vite / vitest chain) that don't ship.
 
@@ -67,12 +67,25 @@ No high-severity findings. Five medium-priority gaps worth tightening before sca
 - All authenticated state-changing endpoints (POST/PATCH/DELETE) rely on a `SameSite=lax` cookie. Cross-site POST/PATCH/DELETE won't send the cookie, so CSRF via fetch/form is blocked.
 - The only authenticated GET that mutates state is `/auth/verify` — but that consumes a single-use token from the URL, not the cookie, so a cross-site link click is the *intended* flow and there's no other-user-account-mutation risk.
 
-### ⚠ M1 — Avatar uploads bypass server-side image processing
+### ✅ M1 — Avatar processing hook (resolved)
 
-**Where:** `decodeAvatarDataUrl` (`src/auth/plugin.ts`) and `createFsAvatarStore` (`src/avatars/fs.ts`).
-**Risk:** Medium. The server validates content-type, magic bytes, and size, but **does not re-encode** the image. The client is trusted to canvas-resize and strip EXIF. A malicious client could upload an image whose bytes match the magic header but contain crafted payloads in trailing data (e.g. polyglots that exploit any downstream image processor a consumer might run).
-**Mitigations in place:** size cap (1.5MB), magic-byte check, content-type allowlist (`image/jpeg`, `image/png`, `image/webp`).
-**Recommendation:** Add an optional `processImage(buf, mime) → { buf, mime }` callback to `AvatarStore` (or the auth/teams plugin options). A consumer can wire `sharp` to re-encode, which strips EXIF and rejects malformed images. We deliberately did not pull `sharp` as a dep (80MB native binary), but the hook should exist.
+**Resolved 2026-05-04 (commit follows this doc).** `AuthPluginOptions.processAvatar` and `TeamsPluginOptions.processAvatar` accept an `(bytes, contentType) → Promise<{bytes, contentType}>` callback. The route runs it between `decodeAvatarDataUrl` and `AvatarStore.put`. Throwing from the processor returns a clean 400 (`invalid_image`) and the original error goes to `fastify.log.error`.
+
+Recommended consumer wiring with `sharp`:
+
+```ts
+import sharp from 'sharp';
+
+await app.register(authPlugin, {
+  // …
+  processAvatar: async (bytes) => ({
+    bytes: await sharp(bytes).resize(512, 512, { fit: 'cover' }).webp({ quality: 85 }).toBuffer(),
+    contentType: 'image/webp',
+  }),
+});
+```
+
+The package itself still doesn't take `sharp` as a dep — the 80MB native binary stays a consumer choice.
 
 ### ⚠ M2 — `requireUser` 401 returns "internal_error" status word
 
@@ -80,11 +93,11 @@ No high-severity findings. Five medium-priority gaps worth tightening before sca
 **Risk:** Low/Cosmetic. The function throws a plain `Error` with `statusCode = 401`. The shared error handler (`mapUatError`) only matches `instanceof UsersAndTeamsError` subclasses, so this falls through to the generic branch and returns `{ error: 'internal_error', message: 'Authentication required' }`. Misleading code label; status is correct.
 **Recommendation:** Introduce `UnauthenticatedError extends UsersAndTeamsError` and map to 401 in `mapUatError`. Replace the raw `throw err` calls.
 
-### ⚠ M3 — Generic error handler echoes `err.message` to clients
+### ✅ M3 — Error-handler message echo (resolved)
 
-**Where:** `src/auth/plugin.ts` (the fall-through branch of `setErrorHandler`).
-**Risk:** Low. For unknown errors, the response includes `message: err.message`. SQLite/Postgres driver errors (e.g. `SqliteError: cannot drop UNIQUE column`) would surface to the client. Not a credential leak but reveals internals.
-**Recommendation:** In production builds, strip `message` and replace with a static "internal error" string. Keep the rich message in `fastify.log.error(err)` only.
+**Resolved 2026-05-04 (commit follows this doc).** Default behaviour now returns `{ error: 'internal_error' }` for unknown 500s — no `message` field. Original error goes to `fastify.log.error(err)`. 401s return a stable label `{ error: 'UNAUTHENTICATED', message: 'Authentication required' }` so the UI can render a sign-in prompt without echoing internals.
+
+Consumers can opt back in for development with `AuthPluginOptions.exposeInternalErrors: true`. Tests cover both branches (`src/auth/plugin.test.ts` › `error-handler hardening`).
 
 ### ⚠ M4 — No rate limiting on team/member mutations
 
@@ -108,7 +121,7 @@ No high-severity findings. Five medium-priority gaps worth tightening before sca
 
 ## Pre-merge checklist
 
-Before declaring v2 production-ready for an external consumer, address `M1` (image processing hook) and `M3` (production error message stripping). The others can ship as documented limitations.
+`M1` and `M3` are resolved. `M2`, `M4`, and `M5` are documented limitations that ship with v2 as-is.
 
 ---
 

@@ -82,7 +82,25 @@ export interface AuthPluginOptions {
    * /teams/:id/avatar from teamsPlugin). Omit to keep avatars initials-only.
    */
   avatarStore?: AvatarStore;
+  /**
+   * Optional image-processing hook. Called on every uploaded avatar before it
+   * reaches the store. Use it to re-encode (and strip EXIF / reject malformed
+   * payloads) via sharp/jimp/etc. — kept pluggable so the package doesn't pull
+   * a native image dep.
+   */
+  processAvatar?: AvatarProcessor;
+  /**
+   * Echo raw error messages back to clients on unknown 500s. Off by default —
+   * unknown errors return `{ error: 'internal_error' }` and the original is
+   * sent to `fastify.log.error`. Flip on in dev for visibility.
+   */
+  exposeInternalErrors?: boolean;
 }
+
+export type AvatarProcessor = (
+  bytes: Buffer,
+  contentType: string,
+) => Promise<{ bytes: Buffer; contentType: string }>;
 
 const requestLinkSchema = z.object({
   email: z.string().trim().email(),
@@ -135,9 +153,19 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
     }
     fastify.log.error(err);
     const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
-    const message = err instanceof Error ? err.message : 'Unknown error';
     reply.code(statusCode);
-    return { error: 'internal_error', message };
+    // Don't echo raw err.message by default — it can leak DB driver details,
+    // stack frames, or internal paths. Consumers can flip `exposeInternalErrors`
+    // on for dev. Authenticated 401s still surface a stable label so the UI
+    // can render "please sign in" instead of a generic error.
+    if (options.exposeInternalErrors) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return { error: 'internal_error', message };
+    }
+    if (statusCode === 401) {
+      return { error: 'UNAUTHENTICATED', message: 'Authentication required' };
+    }
+    return { error: 'internal_error' };
   });
 
   // ---- preHandler: populate request.user from cookie ----
@@ -326,10 +354,24 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
       return { error: 'invalid_image' };
     }
 
+    let bytes = decoded.bytes;
+    let contentType = decoded.contentType;
+    if (options.processAvatar) {
+      try {
+        const processed = await options.processAvatar(bytes, contentType);
+        bytes = processed.bytes;
+        contentType = processed.contentType;
+      } catch (err) {
+        fastify.log.error({ err }, 'avatar processing failed');
+        reply.code(400);
+        return { error: 'invalid_image' };
+      }
+    }
+
     const result = await options.avatarStore.put({
       key: `users/${req.user.id}`,
-      bytes: decoded.bytes,
-      contentType: decoded.contentType,
+      bytes,
+      contentType,
     });
     const updated = await options.repository.updateUser(req.user.id, {
       avatarUrl: result.url,

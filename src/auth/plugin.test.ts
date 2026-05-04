@@ -41,6 +41,12 @@ async function makeApp(overrides: Partial<Parameters<typeof authPlugin>[1]> = {}
     return { user: req.user };
   });
 
+  // Throwaway endpoint that always crashes — used to verify the package's
+  // shared error handler doesn't echo internal errors by default.
+  app.get('/boom', async () => {
+    throw new Error('database connection on fire: secret=hunter2');
+  });
+
   await app.ready();
   return { app, transport };
 }
@@ -319,5 +325,98 @@ describe('authPlugin', () => {
       expect(me1.statusCode).toBe(401);
       expect(me2.statusCode).toBe(401);
     });
+  });
+
+  describe('error-handler hardening', () => {
+    it('hides raw err.message on unknown 500 by default', async () => {
+      const res = await ctx.app.inject({ method: 'GET', url: '/boom' });
+      expect(res.statusCode).toBe(500);
+      const body = res.json() as { error: string; message?: string };
+      expect(body.error).toBe('internal_error');
+      expect(body).not.toHaveProperty('message');
+    });
+
+    it('echoes err.message when exposeInternalErrors is on', async () => {
+      const dev = await makeApp({ exposeInternalErrors: true });
+      const res = await dev.app.inject({ method: 'GET', url: '/boom' });
+      expect(res.statusCode).toBe(500);
+      const body = res.json() as { error: string; message: string };
+      expect(body.message).toContain('database connection on fire');
+      await dev.app.close();
+    });
+  });
+});
+
+describe('processAvatar hook', () => {
+  it('runs the consumer-provided processor before the store sees the bytes', async () => {
+    // Build a tiny app that exercises the hook end-to-end.
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    runMigrations(db);
+    const repo = createSqliteRepository(db);
+    const transport = consoleTransport({ captureOnly: true });
+
+    const stored: Array<{ key: string; bytes: Buffer; contentType: string }> = [];
+    const fakeStore = {
+      async put({ key, bytes, contentType }: { key: string; bytes: Buffer; contentType: string }) {
+        stored.push({ key, bytes, contentType });
+        return { url: `/x/${key}.webp` };
+      },
+      async delete() {},
+    };
+
+    const processor = async (bytes: Buffer, _ct: string) => ({
+      bytes: Buffer.concat([bytes, Buffer.from('TAGGED')]),
+      contentType: 'image/webp',
+    });
+
+    const app = Fastify({ logger: false });
+    await app.register(authPlugin, {
+      repository: repo,
+      email: transport,
+      siteUrl: 'https://app.example.com',
+      siteName: 'App',
+      cookieName: 'sess',
+      rateLimit: false,
+      avatarStore: fakeStore,
+      processAvatar: processor,
+    });
+    await app.ready();
+
+    // Sign in as a brand-new user so we have a session cookie for /me/avatar.
+    await app.inject({
+      method: 'POST',
+      url: '/auth/request-link',
+      payload: { email: 'a@example.com' },
+    });
+    const token = transport.captured[0]!.text.match(
+      /auth\/verify\?token=([A-Za-z0-9_-]+)/,
+    )![1]!;
+    const verifyRes = await app.inject({ method: 'GET', url: `/auth/verify?token=${token}` });
+    const setCookieHeader = verifyRes.headers['set-cookie'] as string | string[];
+    const headers = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+    const cookie = headers
+      .map((h) => h.match(/sess=([^;]+)/)?.[1])
+      .find(Boolean)!;
+
+    // 1×1 PNG (valid magic bytes) wrapped in a data URL.
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63000100000005000169f1c1170000000049454e44ae426082',
+      'hex',
+    );
+    const dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/me/avatar',
+      headers: { cookie: `sess=${cookie}` },
+      payload: { data: dataUrl },
+    });
+    expect(upload.statusCode).toBe(200);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.contentType).toBe('image/webp');
+    expect(stored[0]!.bytes.toString('binary').endsWith('TAGGED')).toBe(true);
+
+    await app.close();
   });
 });

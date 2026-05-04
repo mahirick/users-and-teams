@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { NotAuthorizedError, TeamNotFoundError } from '../core/errors.js';
 import { mapUatError } from '../core/error-handler.js';
 import type { AvatarStore } from '../avatars/types.js';
-import { decodeAvatarDataUrl } from '../auth/plugin.js';
+import { decodeAvatarDataUrl, type AvatarProcessor } from '../auth/plugin.js';
 import { canAddMember } from './permissions.js';
 import type { Repository } from '../core/repository.js';
 import type { EmailTransport } from '../email/types.js';
@@ -39,6 +39,11 @@ export interface TeamsPluginOptions {
   signupAddedTemplate?: typeof signupAddedToTeamEmail;
   /** Avatar storage. Pass to enable POST/DELETE /teams/:id/avatar. */
   avatarStore?: AvatarStore;
+  /**
+   * Optional image-processing hook. Called on every uploaded team avatar
+   * before it reaches the store — same shape as `AuthPluginOptions.processAvatar`.
+   */
+  processAvatar?: AvatarProcessor;
 }
 
 const teamAvatarSchema = z.object({
@@ -311,10 +316,23 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
       reply.code(400);
       return { error: 'invalid_image' };
     }
+    let bytes = decoded.bytes;
+    let contentType = decoded.contentType;
+    if (options.processAvatar) {
+      try {
+        const processed = await options.processAvatar(bytes, contentType);
+        bytes = processed.bytes;
+        contentType = processed.contentType;
+      } catch (err) {
+        fastify.log.error({ err }, 'team avatar processing failed');
+        reply.code(400);
+        return { error: 'invalid_image' };
+      }
+    }
     const result = await options.avatarStore.put({
       key: `teams/${team.id}`,
-      bytes: decoded.bytes,
-      contentType: decoded.contentType,
+      bytes,
+      contentType,
     });
     const updated = await options.repository.updateTeam(team.id, {
       avatarUrl: result.url,
