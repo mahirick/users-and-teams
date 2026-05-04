@@ -6,9 +6,28 @@ If a rule here conflicts with what the user explicitly asks, follow the user.
 
 ## What this is
 
-`@mahirick/users-and-teams` — a self-hosted user / auth / teams / admin package designed to drop into any Fastify backend with a few lines of config. Magic-link auth + opaque sessions + role-based teams + admin audit log + optional React UI. Pluggable storage (SQLite + memory; Postgres planned) and email (console + Resend; SMTP planned).
+`@mahirick/users-and-teams` — a self-hosted user / auth / teams / admin package designed to drop into any Fastify backend with a few lines of config. Magic-link auth + opaque sessions + role-based teams + admin audit log + optional React UI. Pluggable storage (SQLite, in-memory, Postgres) and email (console, Resend, SMTP).
 
 It is **not** a service. It is a **library** consumed by other projects. Treat the public API surface (exports from `src/index.ts` and `src/react.ts`, plus BEM class names in `styles.css`) as semver-stable. Currently at **v2.0.0** — the v1→v2 break introduced auto-add team membership, dropped slugs, and renamed roles to Owner/Admin/User (see `docs/superpowers/specs/2026-05-04-team-self-service-and-avatars-design.md`).
+
+## Distribution
+
+The package is **not** on the public npm registry yet. Consumers install from GitHub:
+
+```bash
+npm install github:mahirick/users-and-teams#v2.0.0
+```
+
+The `prepare` script (in `package.json`) builds `dist/` on the consumer's machine after `npm install` — npm runs `prepare` automatically for git-based deps. The consumer doesn't need to know about `tsc`. The script is a no-op when `dist/` already exists, so it doesn't churn during local development in this repo.
+
+`publishConfig` points at GitHub Packages (`npm.pkg.github.com`, `restricted` access) so we can publish there later without flipping a switch. The public-npm path is wide open whenever we want — bump the version, drop `publishConfig`, run `npm publish`.
+
+When you cut a release: `git tag -a vX.Y.Z -m "…" && git push origin vX.Y.Z`. Consumers pin via `#vX.Y.Z` in their `package.json`.
+
+## Consumer-facing docs
+
+- **`INTEGRATION.md`** (root) — written for the AI agent + dev integrating this package into a downstream app (e.g. ScoreTracker). Has the canonical 8-line skeleton, full backend example, decision tree for storage / email / avatars, conventions consumers should follow, and a snippet they paste into their own CLAUDE.md / AGENTS.md. **Update this file whenever you add a public option, change a default, or alter the install story.** Also listed in `package.json` `files` so it ships in the published tarball.
+- **`README.md`** — consumer-facing overview, links to `INTEGRATION.md`.
 
 ## Roles (v2)
 
@@ -22,11 +41,16 @@ Three names, two scopes:
 
 System Owners bypass team-permission checks. Each team has exactly one Admin (transferable via `transferAdmin`).
 
-## Membership flow (auto-add)
+## Membership flow (auto-add, one-click join)
 
-There is no accept/reject. `POST /teams/:id/members` with an email:
-- Existing user → `addTeamMember` immediately + notification email (`addedToTeamEmail`).
-- Unknown email → row in `team_invites` (now used as a pending-membership marker) + magic-link signup email (`signupAddedToTeamEmail`). On the user's first auth, `consumePendingInvitesForUser` (called from `auth/session.ts`) materializes the membership.
+There is no accept/reject. `POST /teams/:id/members` accepts `{ emails: string[] }` (multi-add up to 50 per request, dedup'd case-insensitively). For each email:
+
+- **Existing user** → `addTeamMember` immediately + notification email (`addedToTeamEmail`).
+- **Unknown email** → mint a single token, write it to **both** `team_invites` (pending-membership marker, keyed by email) AND `magic_links` (so `/auth/verify` accepts it). Email contains `${siteUrl}/auth/verify?token=…`. One click creates-or-logs-in the user and `consumePendingInvitesForUser` (called from `auth/session.ts`) materializes the membership in the same request. No separate sign-up step.
+
+`resendPendingInvite` rotates the token (deletes the old `team_invites` row, mints a new one in both tables) so the previous email's link stops working immediately.
+
+Per-entry results come back as HTTP 207 with `{ results: Array<{ email, status: 'added' | 'pending_signup' | 'error', code?, message?, userId? }> }`. Auth failures (NotAuthorizedError) abort the whole batch with 403; per-email errors (already-member, invalid email) live in the per-entry result.
 
 "Reject" is "leave" — same code path. Admins must `transferAdmin` before leaving.
 
@@ -46,54 +70,70 @@ src/
 ├── adapters/
 │   ├── memory.ts             # in-memory Repository (tests, references)
 │   ├── sqlite.ts             # better-sqlite3 Repository
-│   └── contract.ts           # 38-case contract test suite both must pass
+│   ├── postgres.ts           # pg-shaped Repository (any pg.Pool/Client client)
+│   └── contract.ts           # contract test suite — every adapter must pass
 ├── auth/
 │   ├── tokens.ts             # generateToken (32 random bytes) + hashToken (sha256)
 │   ├── magic-link.ts         # requestMagicLink helper
 │   ├── session.ts            # verify, sliding-TTL, revoke, revokeAll
 │   ├── rate-limit.ts         # in-memory token bucket
-│   └── plugin.ts             # Fastify plugin: /auth/* + onRequest hook + setErrorHandler
+│   └── plugin.ts             # Fastify plugin: /auth/*, /me/*, onRequest hook, setErrorHandler
 ├── teams/
 │   ├── permissions.ts        # canEditTeam, canAddMember, canRemoveMember, canTransferAdmin
 │   ├── operations.ts         # createTeam, addMember, transferAdmin, deleteTeam, editTeam, …
 │   └── plugin.ts             # Fastify plugin: /teams/*
 ├── admin/
 │   ├── operations.ts         # listUsers, suspend, delete, audit log
-│   └── plugin.ts             # Fastify plugin: /admin/*
+│   └── plugin.ts             # Fastify plugin: /admin/* (system-Owner gated)
+├── avatars/
+│   ├── types.ts              # AvatarStore interface, ALLOWED_AVATAR_MIME, MAX_AVATAR_BYTES
+│   └── fs.ts                 # createFsAvatarStore — default disk-backed implementation
 ├── email/
 │   ├── types.ts              # EmailTransport interface
 │   ├── console.ts            # dev (logs to stdout)
-│   ├── resend.ts             # prod (fetch-based, no SDK dep)
-│   └── templates.ts          # magic-link + invite HTML/text (inlined TS)
+│   ├── resend.ts             # Resend (fetch-based, no SDK dep)
+│   ├── smtp.ts               # SMTP (wraps optional `nodemailer` peer)
+│   └── templates.ts          # magic-link + addedToTeam + signupAddedToTeam HTML/text (inlined TS)
 ├── migrations/
 │   ├── 001_initial.ts        # users, magic_links, sessions
 │   ├── 002_teams.ts          # teams, team_members, team_invites
 │   ├── 003_audit.ts          # audit_log
 │   ├── 004_membership_v2.ts  # role rename, drop slug, add avatar cols, name_normalized
-│   ├── index.ts              # ordered migration list
-│   └── runner.ts             # _uat_migrations tracker; idempotent
+│   ├── 005_avatar_urls.ts    # avatar_url on users + teams
+│   ├── index.ts              # ordered SQLite migration list
+│   ├── runner.ts             # SQLite runner: _uat_migrations tracker; idempotent
+│   └── postgres/
+│       ├── index.ts          # pgMigrations (parallel set, BIGINT/$N flavored)
+│       └── runner.ts         # runPostgresMigrations(client) — same _uat_migrations tracker
 ├── ui/
-│   ├── styles.css            # opt-in default theme (--uat-* vars)
-│   ├── provider.tsx          # <UsersAndTeamsProvider>, useAuth
+│   ├── styles.css            # opt-in default theme (--uat-* vars; light + dark via prefers-color-scheme)
+│   ├── provider.tsx          # <UsersAndTeamsProvider>, useAuth (incl. updateDisplayName, deleteAccount, uploadAvatar, removeAvatar)
 │   ├── provider-internal.ts  # internal context for hooks
 │   ├── hooks/
 │   │   └── useTeams.ts       # team list + create
 │   └── components/
-│       ├── Avatar.tsx
+│       ├── Avatar.tsx        # initials or <img> when url present
+│       ├── AvatarUploader.tsx# drag-drop, canvas resize+crop, EXIF strip
 │       ├── LoginForm.tsx
-│       ├── AccountMenu.tsx
+│       ├── AccountMenu.tsx   # display-name edit, sign out, delete account, avatar uploader
 │       ├── VerifyResult.tsx
 │       ├── TeamSwitcher.tsx
-│       ├── TeamMembersList.tsx
-│       ├── InviteForm.tsx
+│       ├── TeamProfile.tsx   # inline rename + team avatar uploader
+│       ├── TeamMembersList.tsx # member search, transfer-admin-then-leave
+│       ├── PendingInvitesList.tsx # admin-only resend / cancel
+│       ├── InviteForm.tsx    # multi-email textarea (`;`-separated, validated)
 │       ├── AdminUsersTable.tsx
-│       └── AuditLog.tsx
+│       └── AuditLog.tsx      # action / actorId / targetId / limit filters
 
 demo/                          # in-repo demo (Vite alias to src/, fast iteration)
 ├── backend/index.ts            # Fastify app
 └── frontend/                   # Vite + React SPA
 
 uat-test/                       # external-consumer test (file:.. dep, real install)
+
+INTEGRATION.md                  # consumer-facing integration guide (ships in the published tarball)
+
+docs/superpowers/specs/         # approved feature specs (v2 design + security review)
 
 tests/                          # currently empty — all tests live next to source
 ```
@@ -121,12 +161,14 @@ This means encapsulation is removed. `setErrorHandler` is **only** called in `au
 
 ### Repository contract = single source of truth
 
-Every adapter (`memory`, `sqlite`, future `postgres`) must satisfy the same contract test suite (`src/adapters/contract.ts`). Adding a new repository method:
+Every adapter (`memory`, `sqlite`, `postgres`) must satisfy the same contract test suite (`src/adapters/contract.ts`). Adding a new repository method:
 
 1. Add the signature to `src/core/repository.ts`.
 2. Add a test case to `src/adapters/contract.ts` that exercises the new behavior.
 3. Both adapter test files (`memory.test.ts`, `sqlite.test.ts`) automatically pick it up.
-4. Implement in both adapters until tests pass.
+4. Implement in `memory.ts`, `sqlite.ts`, AND `postgres.ts` until contract tests pass.
+
+The Postgres adapter doesn't run the contract suite in CI (would need a live PG or `pg-mem` dep). Manual verification: pipe a real PG into the contract harness with a custom `setup` callback. Until that's wired, treat changes touching `postgres.ts` with extra care — TypeScript catches signature drift, but behavioral parity (e.g. how BIGINT epoch values come back as strings) is on you.
 
 Never special-case in operations — if you need new behavior, push it down to the Repository contract.
 
@@ -139,11 +181,20 @@ Each domain has two layers:
 
 When adding a feature: write it as an operation first, test it with the memory repo, then add the route. The route should be ~5 lines: parse, call operation, return.
 
-### Migrations are inline TS
+### Migrations are inline TS, per-driver
 
-`src/migrations/0NN_name.ts` exports `{ id, sql }` as TS template strings, not `.sql` files. This sidesteps asset-copying through the build pipeline. **Never** introduce a `.sql` file — the build won't ship it.
+Two parallel migration sets live in the repo:
 
-The migration runner uses `_uat_migrations` as its tracker table (namespaced) so the package can share a SQLite database with a consumer's own schema. **Never rename this table.**
+- **SQLite:** `src/migrations/00N_name.ts` exports `{ id, sql }` as TS template strings, registered in `src/migrations/index.ts`, run by `runMigrations(db)`.
+- **Postgres:** `src/migrations/postgres/index.ts` exports the same logical migrations as `pgMigrations`, written in PG-flavored SQL (BIGINT, `$N` parameters, `IF NOT EXISTS`, etc.). Run by `runPostgresMigrations(client)`.
+
+**When you add a migration, add it to BOTH sets.** SQLite goes into `migrations/00N_name.ts` + `migrations/index.ts`; Postgres goes into the `pgMigrations` array in `migrations/postgres/index.ts`. The `id` strings must match between the two so consumers using either backend end up at the same logical schema version.
+
+`.sql` files are **never** introduced — the build pipeline doesn't ship non-TS assets except `styles.css`. Inline as TS template strings.
+
+Both runners use `_uat_migrations` as the tracker table (namespaced) so the package can share a database with the consumer's own schema. **Never rename this table.**
+
+Migration `004_membership_v2` had to do a `CREATE teams_v2 / INSERT … SELECT / DROP / RENAME` dance in SQLite because SQLite can't `DROP COLUMN` on a UNIQUE column. Postgres doesn't have that limitation, so the PG version of the same migration uses straight `ALTER TABLE … DROP COLUMN`. Watch for that kind of divergence when writing future schema-changing migrations.
 
 ### Error handling
 
@@ -173,7 +224,7 @@ Plugins take options at registration. Env vars are conveniences for boot-time wi
 
 ```bash
 npm install
-npm test                  # vitest run (224 tests across 22 files)
+npm test                  # vitest run (237 tests across 23 files as of v2.0.0)
 npm run lint              # tsc --noEmit
 npm run build             # tsc + cp styles.css → dist/
 
@@ -190,6 +241,19 @@ npm run dev:frontend      # http://localhost:5273
 npm run update            # rebuild package + reinstall after a package edit
 npm run reset             # rm test SQLite db
 ```
+
+### Verifying the GitHub-install path
+
+Before tagging a release, do a clean install from a temp directory to catch missing files in `package.json` `files`, broken `prepare`, or peer-dep regressions:
+
+```bash
+SCRATCH=$(mktemp -d) && cd "$SCRATCH"
+npm init -y > /dev/null && echo '{"type":"module"}' > package.json
+npm install github:mahirick/users-and-teams#main fastify @fastify/cookie better-sqlite3
+node --input-type=module -e "import {createMemoryRepository, deriveInitials} from '@mahirick/users-and-teams'; console.log(deriveInitials({displayName:'John Smith'}))"
+```
+
+Should print `JS`. If it errors with `Cannot find module 'fastify'` or similar, the consumer side is off (peer-dep instructions in `INTEGRATION.md` are wrong) or `prepare` didn't run. If it prints anything else, the build is broken.
 
 ## Conventions
 
@@ -270,6 +334,18 @@ Subject line: stage / feature, ≤ 70 chars. Body: bulleted summary of what ship
 1. Add the field to the plugin's options interface (`AuthPluginOptions`, `TeamsPluginOptions`, `AdminPluginOptions`).
 2. Apply a default at the top of the plugin function.
 3. Update `README.md`'s configuration section.
+4. Update `INTEGRATION.md` if the option matters for getting started (storage, email, avatars, theming, owner bootstrap). If it's a niche dev-only flag (`exposeInternalErrors`, custom rate-limit configs), the source comment is enough.
+
+### Cutting a release
+
+1. Bump `version` in `package.json`. Semver: breaking changes → major; new option / feature → minor; bug fix → patch.
+2. Run `npm test` and `npm run lint` to confirm clean.
+3. Run `npm run build` so `dist/` is fresh — useful for sanity-checking exports, not strictly required since `prepare` rebuilds on consumer install.
+4. Commit: `git commit -am "vX.Y.Z — short description"`.
+5. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z — short description"`.
+6. Push: `git push origin main && git push origin vX.Y.Z`.
+7. Verify the GitHub-install path against the new tag (snippet under "Verifying the GitHub-install path" above; substitute `#vX.Y.Z` for `#main`).
+8. Update `CLAUDE.md`'s test count + `INTEGRATION.md`'s install snippet if either drifted.
 
 ## What NOT to do
 
@@ -287,17 +363,20 @@ Subject line: stage / feature, ≤ 70 chars. Body: bulleted summary of what ship
 ## Where to look first
 
 - "How does login actually work?" → `src/auth/magic-link.ts` (request) + `src/auth/session.ts` (verify) + `src/auth/plugin.ts` (HTTP).
+- "How does the one-click team-join actually work?" → `addMember` in `src/teams/operations.ts` mints a token written to BOTH `team_invites` and `magic_links`; the email points at `/auth/verify?token=…`. On verify, the standard magic-link path creates-or-logs-in the user, then `consumePendingInvitesForUser` (in `auth/session.ts`) materializes the membership.
 - "What does a request hit?" → `onRequest` hook in `src/auth/plugin.ts` populates `request.user`.
 - "How is permission checked?" → `src/teams/permissions.ts` for teams; `requireOwner(actor)` in `src/admin/operations.ts` for system Owner gate.
-- "Why does X return that status code?" → `src/core/error-handler.ts`.
-- "How is data stored?" → migrations in `src/migrations/0NN_*.ts`; queries in `src/adapters/sqlite.ts`.
-- "How is the package built?" → `tsconfig.build.json` + `package.json` `build` script. Outputs to `dist/`.
-- "How are docs maintained?" → `README.md` is consumer-facing; `CLAUDE.md` (this file) is contributor-facing; `docs/superpowers/specs/` holds approved feature specs; `SPEC.md` + `PLAN.md` are pre-1.0 historical records.
+- "Why does X return that status code?" → `src/core/error-handler.ts`. Note: unknown 500s do NOT echo `err.message` by default (security M3) — flip `exposeInternalErrors: true` in dev.
+- "How is data stored?" → SQLite migrations in `src/migrations/0NN_*.ts`; PG migrations in `src/migrations/postgres/index.ts`; queries in `src/adapters/{sqlite,postgres}.ts`.
+- "How are avatars stored?" → `src/avatars/types.ts` for the `AvatarStore` interface; `src/avatars/fs.ts` for the FS default. Upload routes in `src/auth/plugin.ts` (`/me/avatar`) and `src/teams/plugin.ts` (`/teams/:id/avatar`). Validation (magic bytes + size + MIME) lives in `decodeAvatarDataUrl`.
+- "How is the package built?" → `tsconfig.build.json` + `package.json` `build` script. Outputs to `dist/`. Git-installed consumers get a fresh build via the `prepare` script.
+- "How are docs maintained?" → `README.md` is the elevator pitch + API reference; `INTEGRATION.md` is the consumer integration guide (read by AI agents in downstream apps); `CLAUDE.md` (this file) is contributor-facing; `docs/superpowers/specs/` holds approved feature specs and the security review; `SPEC.md` + `PLAN.md` are pre-1.0 historical records.
 
 ## Historical artifacts
 
 - `SPEC.md` — original (v1) design spec.
 - `PLAN.md` — six-stage v1 build plan (commits `Stage 1` through `Stage 6`).
 - `docs/superpowers/specs/2026-05-04-team-self-service-and-avatars-design.md` — v2 spec (auto-add membership, role rename, avatars).
+- `docs/superpowers/specs/2026-05-04-security-review.md` — security audit. **M1 + M3 resolved**, M2/M4/M5 documented as known limitations.
 
-These are kept for historical reference. New work doesn't update them; it updates `README.md` and this file.
+These are kept for historical reference. New work doesn't update them; it updates `README.md`, `INTEGRATION.md`, and this file.
