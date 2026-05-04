@@ -146,21 +146,34 @@ export async function addMember(input: AddMemberInput): Promise<AddMemberResult>
     return { status: 'added', userId: existingUser.id, member };
   }
 
-  // Unknown email — record pending invite and email a magic-link signup.
+  // Unknown email — issue a single token that doubles as a magic-link
+  // (so /auth/verify creates-or-logs-in the user) AND a pending-team-invite
+  // marker (so consumePendingInvitesForUser materializes the membership at
+  // first auth). The email contains the verify URL — one click to join.
   const token = generateToken();
+  const tokenHash = hashToken(token);
+  const expiresAt = now + input.inviteTtlDays * 86_400_000;
+
   await input.repo.createTeamInvite(
     {
-      tokenHash: hashToken(token),
+      tokenHash,
       teamId: team.id,
       inviterId: actor.id,
       email,
       role: 'user',
-      expiresAt: now + input.inviteTtlDays * 86_400_000,
+      expiresAt,
     },
     now,
   );
+  await input.repo.createMagicLink(
+    { tokenHash, email, expiresAt },
+    now,
+  );
 
-  const signinUrl = new URL('/', input.siteUrl).toString();
+  const verifyUrl = new URL('/auth/verify', input.siteUrl);
+  verifyUrl.searchParams.set('token', token);
+  const signinUrl = verifyUrl.toString();
+
   const rendered = (input.signupAddedTemplate ?? signupAddedToTeamEmail)({
     siteName: input.siteName,
     siteUrl: input.siteUrl,
@@ -356,9 +369,8 @@ export interface ResendPendingInviteInput {
 }
 
 /**
- * Re-send the magic-link signup email for a still-pending invite. The original
- * row stays consumable (so when the user finally signs in they're still added
- * to the team); we just refresh `expires_at` so it doesn't lapse.
+ * Re-send the join email for a still-pending invite. Rotates the token (so
+ * the previous email's link stops working) and refreshes `expires_at`.
  */
 export async function resendPendingInvite(input: ResendPendingInviteInput): Promise<void> {
   const now = input.now ?? Date.now();
@@ -376,16 +388,40 @@ export async function resendPendingInvite(input: ResendPendingInviteInput): Prom
     throw new NotAuthorizedError('That invite has already been consumed');
   }
 
-  // Send a fresh email. We don't rotate the token because the consumer signs
-  // in with their email, not the token (auto-add-at-signup flow).
-  const signinUrl = new URL('/', input.siteUrl).toString();
+  // Rotate the token: drop the old team_invite + magic_link, mint a new one.
+  // The old email's link will start returning INVALID_TOKEN.
+  await input.repo.deleteTeamInvite(invite.tokenHash);
+
+  const newToken = generateToken();
+  const newHash = hashToken(newToken);
+  const expiresAt = now + input.inviteTtlDays * 86_400_000;
+
+  await input.repo.createTeamInvite(
+    {
+      tokenHash: newHash,
+      teamId: invite.teamId,
+      inviterId: actor.id,
+      email: invite.email,
+      role: invite.role,
+      expiresAt,
+    },
+    now,
+  );
+  await input.repo.createMagicLink(
+    { tokenHash: newHash, email: invite.email, expiresAt },
+    now,
+  );
+
+  const verifyUrl = new URL('/auth/verify', input.siteUrl);
+  verifyUrl.searchParams.set('token', newToken);
+
   const rendered = (input.signupAddedTemplate ?? signupAddedToTeamEmail)({
     siteName: input.siteName,
     siteUrl: input.siteUrl,
     teamName: team.name,
     addedByName: actor.displayName,
     addedByEmail: actor.email,
-    signinUrl,
+    signinUrl: verifyUrl.toString(),
   });
   await input.transport.send({
     to: invite.email,
@@ -393,21 +429,6 @@ export async function resendPendingInvite(input: ResendPendingInviteInput): Prom
     html: rendered.html,
     text: rendered.text,
   });
-
-  // Push the expiry forward so the row stays fresh.
-  // Repository has no `updateTeamInvite` — easiest: delete + recreate.
-  await input.repo.deleteTeamInvite(invite.tokenHash);
-  await input.repo.createTeamInvite(
-    {
-      tokenHash: invite.tokenHash,
-      teamId: invite.teamId,
-      inviterId: actor.id,
-      email: invite.email,
-      role: invite.role,
-      expiresAt: now + input.inviteTtlDays * 86_400_000,
-    },
-    now,
-  );
 }
 
 // ---- editTeam (rename) ----

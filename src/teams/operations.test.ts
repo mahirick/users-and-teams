@@ -106,7 +106,7 @@ describe('teams operations', () => {
       expect(member?.role).toBe('user');
     });
 
-    it('creates a pending invite and emails a sign-up link for unknown emails', async () => {
+    it('creates a pending invite + magic-link and emails the verify URL for unknown emails', async () => {
       const { admin, team } = await setup();
 
       const result = await addMember({
@@ -123,12 +123,23 @@ describe('teams operations', () => {
 
       expect(result.status).toBe('pending_signup');
       expect(transport.captured[0]!.to).toBe('newcomer@example.com');
-      const pending = await repo.findPendingInvitesForEmail(
-        'newcomer@example.com',
-        T0 + 2000,
+
+      // Email contains the /auth/verify URL — single click signs them in.
+      const m = transport.captured[0]!.text.match(
+        /\/auth\/verify\?token=([A-Za-z0-9_-]+)/,
       );
-      expect(pending).toHaveLength(1);
-      expect(pending[0]!.teamId).toBe(team.id);
+      expect(m).not.toBeNull();
+      const token = m![1]!;
+
+      // Both the team-invite and the magic-link rows are present, keyed by the
+      // same token hash. /auth/verify will consume the magic-link; the
+      // team-invite is consumed at signin via consumePendingInvitesForUser.
+      const { hashToken } = await import('../auth/tokens.js');
+      const tokenHash = hashToken(token);
+      const teamInvite = await repo.findTeamInviteByHash(tokenHash);
+      expect(teamInvite?.email).toBe('newcomer@example.com');
+      const magicLink = await repo.findMagicLinkByHash(tokenHash);
+      expect(magicLink?.email).toBe('newcomer@example.com');
     });
 
     it('rejects a duplicate add for an existing member', async () => {
