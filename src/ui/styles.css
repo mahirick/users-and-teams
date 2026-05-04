@@ -151,7 +151,8 @@
 
 /* ---------- AccountMenu ---------- */
 
-.uat-account {
+.uat-account,
+.uat-teamswitcher {
   position: relative;
   font-family: var(--uat-font-primary);
   color: var(--uat-text-primary);

@@ -5,6 +5,8 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { z } from 'zod';
+import { NotAuthorizedError } from '../core/errors.js';
+import { mapUatError } from '../core/error-handler.js';
 import type { Repository } from '../core/repository.js';
 import type { EmailTransport } from '../email/types.js';
 import { addedToTeamEmail, signupAddedToTeamEmail } from '../email/templates.js';
@@ -39,8 +41,8 @@ const updateTeamSchema = z.object({
   name: z.string().min(1).max(120),
 });
 
-const addMemberSchema = z.object({
-  email: z.string().email(),
+const addMembersSchema = z.object({
+  emails: z.array(z.string().trim().min(1)).min(1).max(50),
 });
 
 const transferSchema = z.object({
@@ -132,27 +134,74 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
   });
 
   // ---- POST /teams/:id/members ----
+  // Body: { emails: string[] } — one or more emails. Each is processed
+  // independently and reported in `results` (200/207 on the request even when
+  // individual entries fail; check `results[i].status`).
   fastify.post<{ Params: { id: string } }>('/teams/:id/members', async (req, reply) => {
     const user = requireUser(req);
-    const parsed = addMemberSchema.safeParse(req.body);
+    const parsed = addMembersSchema.safeParse(req.body);
     if (!parsed.success) {
       reply.code(400);
       return { error: 'invalid_payload', issues: parsed.error.issues };
     }
-    const result = await addMember({
-      repo: options.repository,
-      actorId: user.id,
-      teamId: req.params.id,
-      email: parsed.data.email,
-      transport: options.email,
-      siteName: options.siteName,
-      siteUrl: options.siteUrl,
-      inviteTtlDays,
-      ...(options.addedTemplate ? { addedTemplate: options.addedTemplate } : {}),
-      ...(options.signupAddedTemplate ? { signupAddedTemplate: options.signupAddedTemplate } : {}),
-    });
-    reply.code(201);
-    return result;
+    const seen = new Set<string>();
+    const queue: string[] = [];
+    for (const raw of parsed.data.emails) {
+      const e = raw.trim().toLowerCase();
+      if (!e || seen.has(e)) continue;
+      seen.add(e);
+      queue.push(e);
+    }
+
+    type EntryResult =
+      | { email: string; status: 'added'; userId: string }
+      | { email: string; status: 'pending_signup' }
+      | { email: string; status: 'error'; code: string; message: string };
+
+    const results: EntryResult[] = [];
+    for (const email of queue) {
+      try {
+        const r = await addMember({
+          repo: options.repository,
+          actorId: user.id,
+          teamId: req.params.id,
+          email,
+          transport: options.email,
+          siteName: options.siteName,
+          siteUrl: options.siteUrl,
+          inviteTtlDays,
+          ...(options.addedTemplate ? { addedTemplate: options.addedTemplate } : {}),
+          ...(options.signupAddedTemplate ? { signupAddedTemplate: options.signupAddedTemplate } : {}),
+        });
+        if (r.status === 'added') {
+          results.push({ email, status: 'added', userId: r.userId });
+        } else {
+          results.push({ email, status: 'pending_signup' });
+        }
+      } catch (err) {
+        // Stop early on auth failures — they're per-actor, not per-email.
+        if (err instanceof NotAuthorizedError) throw err;
+        const mapped = mapUatError(err);
+        if (mapped) {
+          results.push({
+            email,
+            status: 'error',
+            code: mapped.body.error,
+            message: mapped.body.message,
+          });
+        } else {
+          results.push({
+            email,
+            status: 'error',
+            code: 'unknown',
+            message: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }
+    }
+
+    reply.code(207);
+    return { results };
   });
 
   // ---- DELETE /teams/:id/members/:userId ----

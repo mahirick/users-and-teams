@@ -101,11 +101,13 @@ describe('teamsPlugin', () => {
     const addRes = await ctx.app.inject({
       method: 'POST',
       url: `/teams/${team.id}/members`,
-      payload: { email: 'guest@example.com' },
+      payload: { emails: ['guest@example.com'] },
       headers: { cookie: `sess=${adminCookie}` },
     });
-    expect(addRes.statusCode).toBe(201);
-    expect((addRes.json() as { status: string }).status).toBe('added');
+    expect(addRes.statusCode).toBe(207);
+    const addBody = addRes.json() as { results: Array<{ status: string }> };
+    expect(addBody.results).toHaveLength(1);
+    expect(addBody.results[0]!.status).toBe('added');
 
     // Members list now has 2
     const teamRes = await ctx.app.inject({
@@ -143,11 +145,12 @@ describe('teamsPlugin', () => {
     const addRes = await ctx.app.inject({
       method: 'POST',
       url: `/teams/${team.id}/members`,
-      payload: { email: 'newcomer@example.com' },
+      payload: { emails: ['newcomer@example.com'] },
       headers: { cookie: `sess=${adminCookie}` },
     });
-    expect(addRes.statusCode).toBe(201);
-    expect((addRes.json() as { status: string }).status).toBe('pending_signup');
+    expect(addRes.statusCode).toBe(207);
+    const addBody = addRes.json() as { results: Array<{ status: string }> };
+    expect(addBody.results[0]!.status).toBe('pending_signup');
 
     // Newcomer signs in for the first time → membership materializes
     const newcomerCookie = await loginAs(ctx.app, ctx.transport, 'newcomer@example.com');
@@ -224,7 +227,7 @@ describe('teamsPlugin', () => {
     await ctx.app.inject({
       method: 'POST',
       url: `/teams/${team.id}/members`,
-      payload: { email: 'm@example.com' },
+      payload: { emails: ['m@example.com'] },
       headers: { cookie: `sess=${adminCookie}` },
     });
 
@@ -232,10 +235,58 @@ describe('teamsPlugin', () => {
     const res = await ctx.app.inject({
       method: 'POST',
       url: `/teams/${team.id}/members`,
-      payload: { email: 'guest@example.com' },
+      payload: { emails: ['guest@example.com'] },
       headers: { cookie: `sess=${memberCookie}` },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('multi-add: existing user, unknown email, duplicate, and pre-member in one request', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
+    const team = (
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: '/teams',
+          payload: { name: 'Squad' },
+          headers: { cookie: `sess=${adminCookie}` },
+        })
+      ).json() as { team: { id: string } }
+    ).team;
+    // Pre-create one user that's already a member, plus another that's just a known user
+    await loginAs(ctx.app, ctx.transport, 'already@example.com');
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/teams/${team.id}/members`,
+      payload: { emails: ['already@example.com'] },
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    await loginAs(ctx.app, ctx.transport, 'known@example.com');
+
+    const addRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/teams/${team.id}/members`,
+      payload: {
+        emails: [
+          'known@example.com',     // existing user → added
+          'unknown@example.com',   // pending_signup
+          'KNOWN@example.com',     // dedup with known
+          'already@example.com',   // ALREADY_MEMBER error
+        ],
+      },
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    expect(addRes.statusCode).toBe(207);
+    const body = addRes.json() as {
+      results: Array<{ email: string; status: string; code?: string }>;
+    };
+    // Dedup should drop the case-equivalent duplicate
+    expect(body.results).toHaveLength(3);
+    const byEmail = Object.fromEntries(body.results.map((r) => [r.email, r]));
+    expect(byEmail['known@example.com']!.status).toBe('added');
+    expect(byEmail['unknown@example.com']!.status).toBe('pending_signup');
+    expect(byEmail['already@example.com']!.status).toBe('error');
+    expect(byEmail['already@example.com']!.code).toBe('ALREADY_MEMBER');
   });
 
   it('admin transfer-then-leave: transferAdmin then DELETE self', async () => {
@@ -256,7 +307,7 @@ describe('teamsPlugin', () => {
     await ctx.app.inject({
       method: 'POST',
       url: `/teams/${team.id}/members`,
-      payload: { email: 'heir@example.com' },
+      payload: { emails: ['heir@example.com'] },
       headers: { cookie: `sess=${adminCookie}` },
     });
     // Find the heir's user id
