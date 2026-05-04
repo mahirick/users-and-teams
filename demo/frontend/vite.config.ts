@@ -11,6 +11,9 @@ export default defineConfig({
       '/auth': { target: 'http://127.0.0.1:3000', changeOrigin: false },
       '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
       '/teams': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      // Match /admin or /admin/* exactly (not /admin-panel), so the SPA's
+      // /admin-panel routes still hit the frontend.
+      '^/admin(/.*)?$': { target: 'http://127.0.0.1:3000', changeOrigin: false },
     },
   },
   resolve: {

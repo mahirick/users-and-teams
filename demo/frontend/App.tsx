@@ -13,7 +13,10 @@ import {
   TeamMembersList,
   InviteForm,
   AcceptInvite,
+  AdminUsersTable,
+  AuditLog,
   useTeams,
+  useAuth,
   type TeamMembership,
 } from '@mahirick/users-and-teams/react';
 
@@ -43,18 +46,23 @@ export function App() {
         {route === '/verify-result' && <VerifyResultPage />}
         {route === '/my-teams' && <TeamsPage />}
         {route === '/invites/accept' && <AcceptInvitePage />}
+        {route === '/admin-panel' && <AdminPage />}
+        {route === '/admin-panel/audit' && <AuditPage />}
         {route === '/' && <Home navigate={navigate} />}
         {route !== '/' &&
           route !== '/login' &&
           route !== '/verify-result' &&
           route !== '/my-teams' &&
-          route !== '/invites/accept' && <Home navigate={navigate} />}
+          route !== '/invites/accept' &&
+          route !== '/admin-panel' &&
+          route !== '/admin-panel/audit' && <Home navigate={navigate} />}
       </main>
     </div>
   );
 }
 
 function Header() {
+  const { user } = useAuth();
   return (
     <header
       style={{
@@ -81,6 +89,14 @@ function Header() {
         >
           Teams
         </a>
+        {user?.role === 'admin' && (
+          <a
+            href="/admin-panel"
+            style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}
+          >
+            Admin
+          </a>
+        )}
         <AccountMenu signInHref="/login" />
       </div>
     </header>
@@ -167,6 +183,51 @@ function AcceptInvitePage() {
     );
   }
   return <AcceptInvite token={token} redirectTo="/my-teams" loginHref="/login" />;
+}
+
+function AdminPage() {
+  const { user } = useAuth();
+  if (!user) {
+    return <p style={{ color: '#94a3b8' }}>Sign in.</p>;
+  }
+  if (user.role !== 'admin') {
+    return (
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <h1 style={{ marginBottom: 16, fontWeight: 600 }}>Admin</h1>
+        <p style={{ color: '#f87171' }}>You don't have admin role on this app.</p>
+      </div>
+    );
+  }
+  return (
+    <div style={{ maxWidth: 1024, margin: '0 auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          marginBottom: 24,
+        }}
+      >
+        <h1 style={{ margin: 0, fontWeight: 600 }}>Admin · Users</h1>
+        <a
+          href="/admin-panel/audit"
+          style={{ color: '#06b6d4', fontSize: 14, textDecoration: 'none' }}
+        >
+          View audit log →
+        </a>
+      </div>
+      <AdminUsersTable />
+    </div>
+  );
+}
+
+function AuditPage() {
+  return (
+    <div style={{ maxWidth: 1024, margin: '0 auto' }}>
+      <h1 style={{ margin: '0 0 24px', fontWeight: 600 }}>Audit log</h1>
+      <AuditLog />
+    </div>
+  );
 }
 
 function Home({ navigate }: { navigate: (p: string) => void }) {

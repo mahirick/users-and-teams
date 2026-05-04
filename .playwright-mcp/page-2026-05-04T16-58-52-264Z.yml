@@ -1,0 +1,53 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "users-and-teams demo" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]:
+      - button "Teams" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: Teams
+        - generic [ref=e10]: ▼
+      - link "Teams" [ref=e11] [cursor=pointer]:
+        - /url: /my-teams
+      - link "Admin" [ref=e12] [cursor=pointer]:
+        - /url: /admin-panel
+      - button "Admin" [ref=e14] [cursor=pointer]:
+        - generic [ref=e15]: A
+        - generic [ref=e16]: Admin
+  - main [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - heading "Admin · Users" [level=1] [ref=e20]
+        - link "View audit log →" [ref=e21] [cursor=pointer]:
+          - /url: /admin-panel/audit
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - searchbox "Search users" [ref=e25]
+          - generic [ref=e26]: 2 users
+        - table [ref=e27]:
+          - rowgroup [ref=e28]:
+            - row "User Role Status Actions" [ref=e29]:
+              - columnheader "User" [ref=e30]
+              - columnheader "Role" [ref=e31]
+              - columnheader "Status" [ref=e32]
+              - columnheader "Actions" [ref=e33]
+          - rowgroup [ref=e34]:
+            - row "Admin admin@example.com admin active" [ref=e35]:
+              - cell "Admin admin@example.com" [ref=e36]:
+                - strong [ref=e37]: Admin
+                - text: admin@example.com
+              - cell "admin" [ref=e38]:
+                - generic [ref=e39]: admin
+              - cell "active" [ref=e40]:
+                - generic [ref=e41]: active
+              - cell [ref=e42]
+            - row "Target target@example.com user suspended Unsuspend Delete" [ref=e53]:
+              - cell "Target target@example.com" [ref=e44]:
+                - strong [ref=e45]: Target
+                - text: target@example.com
+              - cell "user" [ref=e46]:
+                - generic [ref=e47]: user
+              - cell "suspended" [ref=e54]:
+                - generic [ref=e49]: suspended
+              - cell "Unsuspend Delete" [ref=e55]:
+                - button "Unsuspend" [ref=e56] [cursor=pointer]
+                - button "Delete" [ref=e52] [cursor=pointer]

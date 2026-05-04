@@ -10,6 +10,7 @@ import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import Database from 'better-sqlite3';
 import {
+  adminPlugin,
   authPlugin,
   consoleTransport,
   createSqliteRepository,
@@ -98,6 +99,8 @@ await app.register(teamsPlugin, {
   siteName,
   inviteTtlDays: 7,
 });
+
+await app.register(adminPlugin, { repository });
 
 // Sample protected route — proves request.user works in consumer-defined routes.
 app.get('/api/hello', async (req) => ({

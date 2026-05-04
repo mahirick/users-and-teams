@@ -60,3 +60,19 @@ export {
   canTransferOwnership,
   canUpdateMemberRole,
 } from './teams/permissions.js';
+
+// Admin module
+export { adminPlugin, type AdminPluginOptions } from './admin/plugin.js';
+export {
+  listUsers,
+  getUserDetail,
+  updateUser,
+  suspendUser,
+  unsuspendUser,
+  deleteUser,
+  listAuditLog,
+  type UserDetail,
+} from './admin/operations.js';
+
+// Audit
+export { recordAudit, AUDIT_ACTIONS, type AuditAction } from './core/audit.js';

@@ -17,3 +17,5 @@ export { InviteForm, type InviteFormProps } from './ui/components/InviteForm.js'
 export { TeamMembersList, type TeamMembersListProps } from './ui/components/TeamMembersList.js';
 export { AcceptInvite, type AcceptInviteProps } from './ui/components/AcceptInvite.js';
 export { useTeams, type TeamMembership, type PublicTeam, type UseTeamsResult } from './ui/hooks/useTeams.js';
+export { AdminUsersTable, type AdminUsersTableProps } from './ui/components/AdminUsersTable.js';
+export { AuditLog, type AuditLogProps } from './ui/components/AuditLog.js';
