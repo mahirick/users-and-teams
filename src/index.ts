@@ -16,3 +16,21 @@ export { runMigrations } from './migrations/runner.js';
 export { consoleTransport } from './email/console.js';
 export { resendTransport } from './email/resend.js';
 export type { EmailTransport, EmailMessage } from './email/types.js';
+export { magicLinkEmail, inviteEmail } from './email/templates.js';
+
+// Auth module
+export { authPlugin, type AuthPluginOptions } from './auth/plugin.js';
+export { requestMagicLink, type RequestMagicLinkInput } from './auth/magic-link.js';
+export {
+  verifyMagicLinkAndCreateSession,
+  verifySession,
+  revokeSession,
+  revokeAllSessionsForUser,
+} from './auth/session.js';
+export {
+  createRateLimiter,
+  type RateLimiter,
+  type RateLimitConfig,
+  type RateLimitResult,
+} from './auth/rate-limit.js';
+export { generateToken, hashToken } from './auth/tokens.js';

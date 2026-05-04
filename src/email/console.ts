@@ -32,6 +32,6 @@ export function consoleTransport(opts: ConsoleTransportOptions = {}): ConsoleTra
 }
 
 function extractFirstHttpsLink(body: string): string | null {
-  const match = body.match(/https:\/\/[^\s"'<>]+/);
+  const match = body.match(/https?:\/\/[^\s"'<>]+/);
   return match ? match[0] : null;
 }
