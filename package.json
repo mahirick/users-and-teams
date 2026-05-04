@@ -40,6 +40,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
+    "prepare": "node -e \"if(!require('fs').existsSync('dist')) require('child_process').execSync('npm run build',{stdio:'inherit'})\"",
     "demo:backend": "tsx demo/backend/index.ts",
     "demo:frontend": "vite --config demo/frontend/vite.config.ts",
     "demo:reset": "rm -f demo/backend/demo.db",
