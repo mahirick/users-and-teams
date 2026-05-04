@@ -38,28 +38,46 @@ Your app now has `/auth/*`, `/teams/*`, `/admin/*`, plus `request.user` decorate
 
 ## Install
 
-The package isn't on the public npm registry yet. Install directly from GitHub — npm clones the repo, runs the `prepare` script which builds `dist/` on your machine, and you're set:
+The package isn't on the public npm registry yet. Install directly from GitHub — npm clones the repo, runs the `prepare` script which builds `dist/` on your machine, and you're set.
+
+### Production (recommended): pin to a commit SHA
 
 ```bash
-# Pin to a tag (recommended)
-npm install github:mahirick/users-and-teams#v2.0.0
-
-# Or track main (cutting-edge)
-npm install github:mahirick/users-and-teams
-
-# Equivalent long-form
-npm install git+https://github.com/mahirick/users-and-teams.git#v2.0.0
+# Pin to the v2.0.1 commit (canonical pin format — never moves)
+npm install \
+  github:mahirick/users-and-teams#<v2.0.1-commit-sha> \
+  fastify @fastify/cookie better-sqlite3
 ```
 
-The first install takes ~30s the first time (clone + tsc build); subsequent installs are cached and fast. Your `package.json` ends up with a line like:
+> Replace `<v2.0.1-commit-sha>` with the output of `git ls-remote https://github.com/mahirick/users-and-teams refs/tags/v2.0.1^{}` (the `^{}` deref gets the commit, not the tag object). The latest published SHA is recorded in `CHANGELOG.md`.
+
+Why a commit SHA and not a tag? Tags are mutable — anyone with push access can move them. A commit SHA is content-addressed and can never silently change. `npm install` against a tag does record the resolved SHA in `package-lock.json`, so a `npm ci` install is reproducible — but a fresh `npm install` (e.g. a Docker image rebuild that loses the lock) will re-resolve the tag and could pull a different commit if the tag was rewritten. Pinning the SHA in `package.json` removes that class of trust assumption.
+
+### Local dev: pin to a tag (fine — rebuilding from scratch is rare)
+
+```bash
+npm install \
+  github:mahirick/users-and-teams#v2.0.1 \
+  fastify @fastify/cookie better-sqlite3
+```
+
+### Track main (cutting-edge, only do this if you're working alongside the package)
+
+```bash
+npm install github:mahirick/users-and-teams fastify @fastify/cookie better-sqlite3
+```
+
+Your `package.json` ends up with one of:
 
 ```json
-"@mahirick/users-and-teams": "github:mahirick/users-and-teams#v2.0.0"
+"@mahirick/users-and-teams": "github:mahirick/users-and-teams#<sha>"
+"@mahirick/users-and-teams": "github:mahirick/users-and-teams#v2.0.1"
+"@mahirick/users-and-teams": "github:mahirick/users-and-teams"
 ```
 
-To upgrade to a newer tag later, just bump the ref and `npm install` again.
+The first install takes ~30s the first time (clone + tsc build); subsequent installs are cached. To upgrade later, bump the ref and `npm install` again.
 
-> Once the package is published to npm, `npm install @mahirick/users-and-teams` will be the canonical path. The wiring below works identically for both install methods.
+> Once the package is published to npm, `npm install @mahirick/users-and-teams` will be the canonical path. The wiring below works identically.
 
 Then install the **peer dependencies you actually use**. They're all marked optional, so you only pay for what you need:
 
@@ -368,6 +386,102 @@ We use `@mahirick/users-and-teams` for all of this. Don't roll your own.
 | What avatar formats are accepted? | `src/auth/plugin.ts` → `decodeAvatarDataUrl` + `src/avatars/types.ts` |
 | What audit actions exist? | `src/core/audit.ts` → `AUDIT_ACTIONS` |
 | End-to-end consumer example | `uat-test/backend/server.ts` + `uat-test/frontend/App.tsx` (in this repo) |
+
+---
+
+## Migrating from a password gate
+
+If your app currently has a single shared admin password (`POST /api/admin/auth` checking a hash, with the frontend persisting an `app:adminUnlocked = "true"` flag in `localStorage`), here's the canonical migration:
+
+### Backend
+
+1. **Register `authPlugin`** with your bootstrap email in `ownerEmails`:
+   ```ts
+   await app.register(authPlugin, {
+     repository, email, siteUrl, siteName,
+     ownerEmails: ['you@example.com'],
+   });
+   ```
+   First time you sign in with that email, you become a system Owner.
+
+2. **Don't delete `/api/admin/auth` immediately.** Make it return `410 Gone`:
+   ```ts
+   app.post('/api/admin/auth', async (_req, reply) => {
+     reply.code(410);
+     return { error: 'gone', message: 'Admin auth moved. Sign in via /login.' };
+   });
+   ```
+   This is for one release cycle, to give cached frontends a clear failure mode instead of a 404 mystery. Drop it after consumers have rolled forward.
+
+3. **Replace permission checks** in your existing routes:
+   ```ts
+   // Before: cookie-blob check, or always-allow because the gate was on the frontend
+   app.post('/api/admin/scores/reset', async (req, reply) => { /* … */ });
+
+   // After: gate on Owner role (or your own narrower predicate)
+   app.post('/api/admin/scores/reset', async (req, reply) => {
+     const user = app.requireUser(req);                 // throws 401
+     if (user.role !== 'owner') {                       // 403
+       reply.code(403);
+       return { error: 'NOT_AUTHORIZED' };
+     }
+     // …
+   });
+   ```
+
+   Or use the package's typed error so the shared error handler maps it for you:
+   ```ts
+   import { NotAuthorizedError } from '@mahirick/users-and-teams';
+   if (user.role !== 'owner') throw new NotAuthorizedError();
+   ```
+
+4. **Anonymous browsing keeps working.** Routes that don't call `requireUser` still serve unauthenticated traffic. `request.user` is `null`, not an error.
+
+### Frontend
+
+1. **Wrap the app in `<UsersAndTeamsProvider>`.** It auto-fetches `/auth/me` on mount.
+
+2. **Replace the gate check.** Old:
+   ```tsx
+   const isAdmin = localStorage.getItem('app:adminUnlocked') === 'true';
+   if (isAdmin) <AdminPanel />
+   ```
+   New:
+   ```tsx
+   import { useAuth } from '@mahirick/users-and-teams/react';
+   const { user } = useAuth();
+   const isAdmin = user?.role === 'owner';
+   if (isAdmin) <AdminPanel />
+   ```
+
+3. **Drop the localStorage write.** The cookie is HttpOnly and managed by the server — there's no client-side state to set or clear.
+
+4. **Add a sign-in entrypoint.** `<LoginForm siteName="My App" />` is the easy path. The magic-link flow then bounces them through `/auth/verify?token=…` and back to `verifySuccessRedirect`.
+
+5. **Sign out.** `useAuth().logout()` clears the session cookie. If you want a "sign out everywhere" option (kills every session for the user across devices), use `logoutAll()`.
+
+### Cookie scope (rustfish-style multi-subdomain setup)
+
+If your app might end up on `tracka.rustfish.com` today and `admin.rustfish.com` tomorrow and you want a single sign-in to cover both, set `cookieDomain` to the parent domain at registration time:
+
+```ts
+await app.register(authPlugin, {
+  // …
+  cookieName: 'rustfish_session',
+  cookieDomain: process.env.NODE_ENV === 'production' ? '.rustfish.com' : undefined,
+});
+```
+
+The cookie then applies to every subdomain. Verified that the `cookieDomain` option exists and is honored — see `src/auth/plugin.ts` (`cookieDomain` flows into both `setCookie` and `clearCookie`).
+
+### Quick rollback plan
+
+If you discover a broken assumption mid-migration, the cleanest rollback is:
+1. Don't deregister `authPlugin` — leave it. Cookies are HttpOnly + scoped, they don't break anything.
+2. Re-mount the old `/api/admin/auth` route alongside the new auth.
+3. Revert the frontend's gate check.
+
+The auth tables (`users`, `sessions`, etc.) coexist with your existing schema; they don't interfere.
 
 ---
 
