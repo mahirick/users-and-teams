@@ -16,6 +16,7 @@ interface MemberRow {
     displayName: string | null;
     avatarColor: string;
     avatarInitials: string;
+    avatarUrl: string | null;
   };
 }
 
@@ -35,6 +36,7 @@ export function TeamMembersList({ teamId, className }: TeamMembersListProps) {
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTo, setTransferTo] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   async function refresh() {
     const res = await config.fetch(`${config.apiBase}/teams/${teamId}`, {
@@ -107,8 +109,38 @@ export function TeamMembersList({ teamId, className }: TeamMembersListProps) {
     }
   }
 
+  const q = search.trim().toLowerCase();
+  const visibleMembers = q
+    ? data.members.filter(
+        (m) =>
+          m.user.email.toLowerCase().includes(q) ||
+          (m.user.displayName ?? '').toLowerCase().includes(q),
+      )
+    : data.members;
+
   return (
     <div className={className}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        <input
+          className="uat-login__input"
+          type="search"
+          placeholder="Search members…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search members"
+          style={{ flex: 1, maxWidth: 320 }}
+        />
+        <span style={{ color: 'var(--uat-text-muted)', fontSize: 13 }}>
+          {visibleMembers.length} of {data.members.length}
+        </span>
+      </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--uat-border-light)' }}>
@@ -118,7 +150,7 @@ export function TeamMembersList({ teamId, className }: TeamMembersListProps) {
           </tr>
         </thead>
         <tbody>
-          {data.members.map((m) => {
+          {visibleMembers.map((m) => {
             const isSelf = user?.id === m.user.id;
             const targetIsAdmin = m.member.role === 'admin';
             const display = m.user.displayName ?? m.user.email;
@@ -129,6 +161,7 @@ export function TeamMembersList({ teamId, className }: TeamMembersListProps) {
                     <Avatar
                       initials={m.user.avatarInitials}
                       color={m.user.avatarColor}
+                      url={m.user.avatarUrl}
                       size="md"
                       label={display}
                     />

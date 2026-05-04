@@ -44,6 +44,7 @@ export interface UpdateUserInput {
   email?: string;
   avatarColor?: string;
   avatarInitials?: string;
+  avatarUrl?: string | null;
 }
 
 export interface CreateMagicLinkInput {
@@ -76,6 +77,7 @@ export interface UpdateTeamInput {
   adminId?: string;       // for admin transfer
   avatarColor?: string;
   avatarInitials?: string;
+  avatarUrl?: string | null;
 }
 
 export interface CreateTeamInviteInput {
@@ -142,7 +144,10 @@ export interface Repository {
   createTeamInvite(input: CreateTeamInviteInput, now: number): Promise<void>;
   findTeamInviteByHash(tokenHash: string): Promise<TeamInvite | null>;
   consumeTeamInvite(tokenHash: string, now: number): Promise<void>;
+  deleteTeamInvite(tokenHash: string): Promise<void>;
   listTeamInvites(teamId: string): Promise<TeamInvite[]>;
+  /** Pending (un-consumed, un-expired) invites for one team. */
+  listPendingInvitesForTeam(teamId: string, now: number): Promise<TeamInvite[]>;
   /** All un-consumed, un-expired invites for a given email (for auto-add at signup). */
   findPendingInvitesForEmail(email: string, now: number): Promise<TeamInvite[]>;
 

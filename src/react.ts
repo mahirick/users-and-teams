@@ -12,10 +12,13 @@ export {
 export { LoginForm, type LoginFormProps } from './ui/components/LoginForm.js';
 export { AccountMenu, type AccountMenuProps } from './ui/components/AccountMenu.js';
 export { Avatar, type AvatarProps } from './ui/components/Avatar.js';
+export { AvatarUploader, type AvatarUploaderProps } from './ui/components/AvatarUploader.js';
 export { VerifyResult, type VerifyResultProps } from './ui/components/VerifyResult.js';
 export { TeamSwitcher, type TeamSwitcherProps } from './ui/components/TeamSwitcher.js';
+export { TeamProfile, type TeamProfileProps } from './ui/components/TeamProfile.js';
 export { InviteForm, type InviteFormProps } from './ui/components/InviteForm.js';
 export { TeamMembersList, type TeamMembersListProps } from './ui/components/TeamMembersList.js';
+export { PendingInvitesList, type PendingInvitesListProps } from './ui/components/PendingInvitesList.js';
 export { useTeams, type TeamMembership, type PublicTeam, type UseTeamsResult } from './ui/hooks/useTeams.js';
 export { AdminUsersTable, type AdminUsersTableProps } from './ui/components/AdminUsersTable.js';
 export { AuditLog, type AuditLogProps } from './ui/components/AuditLog.js';

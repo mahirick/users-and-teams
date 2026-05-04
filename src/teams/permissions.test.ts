@@ -15,6 +15,7 @@ const T: Team = {
   adminId: 'u-admin',
   avatarColor: '#525252',
   avatarInitials: 'T',
+  avatarUrl: null,
   createdAt: 0,
 };
 
@@ -26,6 +27,7 @@ const baseUser: User = {
   status: 'active',
   avatarColor: '#525252',
   avatarInitials: '?',
+  avatarUrl: null,
   createdAt: 0,
   lastSeenAt: null,
 };

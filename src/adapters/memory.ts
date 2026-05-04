@@ -52,6 +52,7 @@ export function createMemoryRepository(): Repository {
         status: 'active',
         avatarColor: input.avatarColor ?? '#525252',
         avatarInitials: input.avatarInitials ?? '?',
+        avatarUrl: null,
         createdAt: now,
         lastSeenAt: null,
       };
@@ -86,6 +87,7 @@ export function createMemoryRepository(): Repository {
         ...(patch.email !== undefined ? { email: patch.email } : {}),
         ...(patch.avatarColor !== undefined ? { avatarColor: patch.avatarColor } : {}),
         ...(patch.avatarInitials !== undefined ? { avatarInitials: patch.avatarInitials } : {}),
+        ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
       };
       users.set(id, updated);
       return { ...updated };
@@ -211,6 +213,7 @@ export function createMemoryRepository(): Repository {
         adminId: input.adminId,
         avatarColor: input.avatarColor ?? '#525252',
         avatarInitials: input.avatarInitials ?? '?',
+        avatarUrl: null,
         createdAt: now,
       };
       teams.set(team.id, team);
@@ -245,6 +248,7 @@ export function createMemoryRepository(): Repository {
         ...(patch.adminId !== undefined ? { adminId: patch.adminId } : {}),
         ...(patch.avatarColor !== undefined ? { avatarColor: patch.avatarColor } : {}),
         ...(patch.avatarInitials !== undefined ? { avatarInitials: patch.avatarInitials } : {}),
+        ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
       };
       teams.set(id, updated);
       return { ...updated };
@@ -333,6 +337,19 @@ export function createMemoryRepository(): Repository {
       const inv = invites.get(tokenHash);
       if (!inv) return;
       invites.set(tokenHash, { ...inv, consumedAt: now });
+    },
+
+    async deleteTeamInvite(tokenHash): Promise<void> {
+      invites.delete(tokenHash);
+    },
+
+    async listPendingInvitesForTeam(teamId, now): Promise<TeamInvite[]> {
+      return Array.from(invites.values())
+        .filter(
+          (i) => i.teamId === teamId && i.consumedAt === null && i.expiresAt >= now,
+        )
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((i) => ({ ...i }));
     },
 
     async listTeamInvites(teamId): Promise<TeamInvite[]> {

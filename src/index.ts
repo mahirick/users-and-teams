@@ -14,10 +14,25 @@ export {
 
 export { createMemoryRepository } from './adapters/memory.js';
 export { createSqliteRepository } from './adapters/sqlite.js';
+export {
+  createPostgresRepository,
+  type PgQueryClient,
+} from './adapters/postgres.js';
 export { runMigrations } from './migrations/runner.js';
+export { runPostgresMigrations } from './migrations/postgres/runner.js';
 
 export { consoleTransport } from './email/console.js';
 export { resendTransport } from './email/resend.js';
+export { smtpTransport, type SmtpOptions } from './email/smtp.js';
+
+export {
+  type AvatarStore,
+  type AvatarStoreInput,
+  type AvatarStorePutResult,
+  ALLOWED_AVATAR_MIME,
+  MAX_AVATAR_BYTES,
+} from './avatars/types.js';
+export { createFsAvatarStore, type FsAvatarStoreOptions } from './avatars/fs.js';
 export type { EmailTransport, EmailMessage } from './email/types.js';
 export {
   magicLinkEmail,
@@ -50,6 +65,9 @@ export {
   consumePendingInvitesForUser,
   listMyTeams,
   listMembers,
+  listPendingInvites,
+  cancelPendingInvite,
+  resendPendingInvite,
   removeMember,
   transferAdmin,
   deleteTeam,

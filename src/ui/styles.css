@@ -40,6 +40,7 @@
  */
 
 :root {
+  /* Dark (default) */
   --uat-bg-deep: #0b0e10;
   --uat-bg-surface: #14181b;
   --uat-bg-secondary: #1c2025;
@@ -64,6 +65,49 @@
   --uat-radius: 10px;
   --uat-radius-sm: 6px;
   --uat-transition-fast: 0.15s ease;
+}
+
+/* Light theme — auto via the OS preference, or force with .uat-theme-light. */
+@media (prefers-color-scheme: light) {
+  :root:not(.uat-theme-dark) {
+    --uat-bg-deep: #f8fafc;
+    --uat-bg-surface: #ffffff;
+    --uat-bg-secondary: #f1f5f9;
+    --uat-bg-hover: #e2e8f0;
+
+    --uat-border: #cbd5e1;
+    --uat-border-light: #e2e8f0;
+
+    --uat-text-primary: #0f172a;
+    --uat-text-muted: #475569;
+    --uat-text-dim: #94a3b8;
+
+    --uat-accent: #0891b2;
+    --uat-accent-fg: #ffffff;
+    --uat-accent-hover: #0e7490;
+    --uat-error: #dc2626;
+    --uat-success: #059669;
+  }
+}
+
+.uat-theme-light {
+  --uat-bg-deep: #f8fafc;
+  --uat-bg-surface: #ffffff;
+  --uat-bg-secondary: #f1f5f9;
+  --uat-bg-hover: #e2e8f0;
+
+  --uat-border: #cbd5e1;
+  --uat-border-light: #e2e8f0;
+
+  --uat-text-primary: #0f172a;
+  --uat-text-muted: #475569;
+  --uat-text-dim: #94a3b8;
+
+  --uat-accent: #0891b2;
+  --uat-accent-fg: #ffffff;
+  --uat-accent-hover: #0e7490;
+  --uat-error: #dc2626;
+  --uat-success: #059669;
 }
 
 /* ---------- LoginForm ---------- */
@@ -349,6 +393,7 @@
   user-select: none;
   flex-shrink: 0;
   line-height: 1;
+  object-fit: cover;
 }
 
 .uat-avatar--sm {

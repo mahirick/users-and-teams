@@ -14,6 +14,7 @@ interface UserRow {
   status: 'active' | 'suspended' | 'deleted';
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl: string | null;
   createdAt: number;
   lastSeenAt: number | null;
 }
@@ -120,6 +121,7 @@ export function AdminUsersTable({ className, pageSize = 25, onSelect }: AdminUse
                     <Avatar
                       initials={u.avatarInitials}
                       color={u.avatarColor}
+                      url={u.avatarUrl}
                       size="md"
                       label={u.displayName ?? u.email}
                     />

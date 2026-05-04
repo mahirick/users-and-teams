@@ -13,6 +13,7 @@ export interface User {
   status: UserStatus;
   avatarColor: string;   // hex like "#34C759", deterministic from id
   avatarInitials: string; // up to 2 uppercase ASCII chars, "?" fallback
+  avatarUrl: string | null; // optional uploaded photo URL — overrides initials
   createdAt: number;     // epoch ms
   lastSeenAt: number | null;
 }
@@ -42,6 +43,7 @@ export interface Team {
   adminId: string;        // user id of the team's Admin (one per team)
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl: string | null;
   createdAt: number;
 }
 

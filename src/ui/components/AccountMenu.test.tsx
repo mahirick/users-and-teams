@@ -46,7 +46,7 @@ describe('<AccountMenu />', () => {
 
   it('renders an avatar with the first letter of email when user is logged in', async () => {
     const fetchStub = makeFetchStub({
-      '/auth/me': meWith({ id: '1', email: 'alice@example.com', displayName: null, role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A' }),
+      '/auth/me': meWith({ id: '1', email: 'alice@example.com', displayName: null, role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A', avatarUrl: null }),
     });
     render(
       <UsersAndTeamsProvider apiBase="" fetch={fetchStub}>
@@ -61,7 +61,7 @@ describe('<AccountMenu />', () => {
 
   it('uses displayName when present', async () => {
     const fetchStub = makeFetchStub({
-      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A' }),
+      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A', avatarUrl: null }),
     });
     render(
       <UsersAndTeamsProvider apiBase="" fetch={fetchStub}>
@@ -76,7 +76,7 @@ describe('<AccountMenu />', () => {
 
   it('toggles the menu when the trigger is clicked', async () => {
     const fetchStub = makeFetchStub({
-      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A' }),
+      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A', avatarUrl: null }),
     });
     render(
       <UsersAndTeamsProvider apiBase="" fetch={fetchStub}>
@@ -98,7 +98,7 @@ describe('<AccountMenu />', () => {
   it('calls logout when "Sign out" is clicked', async () => {
     let logoutCalled = false;
     const fetchStub = makeFetchStub({
-      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A' }),
+      '/auth/me': meWith({ id: '1', email: 'a@example.com', displayName: 'Alice', role: 'user', avatarColor: '#0EA5E9', avatarInitials: 'A', avatarUrl: null }),
       '/auth/logout': () => {
         logoutCalled = true;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });

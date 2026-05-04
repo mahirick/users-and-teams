@@ -19,6 +19,7 @@ export interface PublicUser {
   role: 'user' | 'owner';
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl: string | null;
 }
 
 export interface AuthContextValue {
@@ -32,6 +33,14 @@ export interface AuthContextValue {
   logout: () => Promise<void>;
   /** Sign out every session for the current user. */
   logoutAll: () => Promise<void>;
+  /** Update your own display name. */
+  updateDisplayName: (displayName: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Delete your own account. */
+  deleteAccount: () => Promise<{ ok: boolean; error?: string }>;
+  /** Upload a photo for your own avatar. `dataUrl` is `data:image/...;base64,...`. */
+  uploadAvatar: (dataUrl: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Remove your uploaded photo (revert to initials). */
+  removeAvatar: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -119,9 +128,93 @@ export function UsersAndTeamsProvider({
     await refresh();
   }, [apiBase, fetchFn, refresh]);
 
+  const updateDisplayName = useCallback(
+    async (displayName: string) => {
+      const res = await fetchFn(`${apiBase}/me`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName }),
+      });
+      if (res.ok) {
+        await refresh();
+        return { ok: true };
+      }
+      if (res.status === 400) return { ok: false, error: 'invalid_payload' };
+      return { ok: false, error: 'unknown' };
+    },
+    [apiBase, fetchFn, refresh],
+  );
+
+  const deleteAccount = useCallback(async () => {
+    const res = await fetchFn(`${apiBase}/me`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (res.ok) {
+      await refresh();
+      return { ok: true };
+    }
+    if (res.status === 403) return { ok: false, error: 'OWNER_SELF_DELETE' };
+    return { ok: false, error: 'unknown' };
+  }, [apiBase, fetchFn, refresh]);
+
+  const uploadAvatar = useCallback(
+    async (dataUrl: string) => {
+      const res = await fetchFn(`${apiBase}/me/avatar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: dataUrl }),
+      });
+      if (res.ok) {
+        await refresh();
+        return { ok: true };
+      }
+      if (res.status === 501) return { ok: false, error: 'avatar_store_not_configured' };
+      if (res.status === 400) return { ok: false, error: 'invalid_image' };
+      return { ok: false, error: 'unknown' };
+    },
+    [apiBase, fetchFn, refresh],
+  );
+
+  const removeAvatar = useCallback(async () => {
+    const res = await fetchFn(`${apiBase}/me/avatar`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (res.ok) {
+      await refresh();
+      return { ok: true };
+    }
+    return { ok: false, error: 'unknown' };
+  }, [apiBase, fetchFn, refresh]);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, refresh, requestLink, logout, logoutAll }),
-    [user, loading, refresh, requestLink, logout, logoutAll],
+    () => ({
+      user,
+      loading,
+      refresh,
+      requestLink,
+      logout,
+      logoutAll,
+      updateDisplayName,
+      deleteAccount,
+      uploadAvatar,
+      removeAvatar,
+    }),
+    [
+      user,
+      loading,
+      refresh,
+      requestLink,
+      logout,
+      logoutAll,
+      updateDisplayName,
+      deleteAccount,
+      uploadAvatar,
+      removeAvatar,
+    ],
   );
 
   const config = useMemo(() => ({ apiBase, fetch: fetchFn }), [apiBase, fetchFn]);

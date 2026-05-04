@@ -5,19 +5,25 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { z } from 'zod';
-import { NotAuthorizedError } from '../core/errors.js';
+import { NotAuthorizedError, TeamNotFoundError } from '../core/errors.js';
 import { mapUatError } from '../core/error-handler.js';
+import type { AvatarStore } from '../avatars/types.js';
+import { decodeAvatarDataUrl } from '../auth/plugin.js';
+import { canAddMember } from './permissions.js';
 import type { Repository } from '../core/repository.js';
 import type { EmailTransport } from '../email/types.js';
 import { addedToTeamEmail, signupAddedToTeamEmail } from '../email/templates.js';
 import {
   addMember,
+  cancelPendingInvite,
   createTeam,
   deleteTeam,
   editTeam,
   listMembers,
   listMyTeams,
+  listPendingInvites,
   removeMember,
+  resendPendingInvite,
   transferAdmin,
 } from './operations.js';
 
@@ -31,7 +37,13 @@ export interface TeamsPluginOptions {
   addedTemplate?: typeof addedToTeamEmail;
   /** Override the "you were added — sign up to see it" email (unknown email). */
   signupAddedTemplate?: typeof signupAddedToTeamEmail;
+  /** Avatar storage. Pass to enable POST/DELETE /teams/:id/avatar. */
+  avatarStore?: AvatarStore;
 }
+
+const teamAvatarSchema = z.object({
+  data: z.string().min(1),
+});
 
 const createTeamSchema = z.object({
   name: z.string().min(1).max(120),
@@ -218,6 +230,113 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
       return { ok: true };
     },
   );
+
+  // ---- GET /teams/:id/pending-invites ----
+  fastify.get<{ Params: { id: string } }>(
+    '/teams/:id/pending-invites',
+    async (req) => {
+      const user = requireUser(req);
+      const invites = await listPendingInvites({
+        repo: options.repository,
+        actorId: user.id,
+        teamId: req.params.id,
+      });
+      // Don't leak inviter ids beyond what the UI needs; map to a slim shape.
+      return {
+        invites: invites.map((i) => ({
+          tokenHash: i.tokenHash,
+          email: i.email,
+          createdAt: i.createdAt,
+          expiresAt: i.expiresAt,
+        })),
+      };
+    },
+  );
+
+  // ---- DELETE /teams/:id/pending-invites/:tokenHash ----
+  fastify.delete<{ Params: { id: string; tokenHash: string } }>(
+    '/teams/:id/pending-invites/:tokenHash',
+    async (req) => {
+      const user = requireUser(req);
+      await cancelPendingInvite({
+        repo: options.repository,
+        actorId: user.id,
+        teamId: req.params.id,
+        tokenHash: req.params.tokenHash,
+      });
+      return { ok: true };
+    },
+  );
+
+  // ---- POST /teams/:id/pending-invites/:tokenHash/resend ----
+  fastify.post<{ Params: { id: string; tokenHash: string } }>(
+    '/teams/:id/pending-invites/:tokenHash/resend',
+    async (req) => {
+      const user = requireUser(req);
+      await resendPendingInvite({
+        repo: options.repository,
+        actorId: user.id,
+        teamId: req.params.id,
+        tokenHash: req.params.tokenHash,
+        transport: options.email,
+        siteName: options.siteName,
+        siteUrl: options.siteUrl,
+        inviteTtlDays,
+        ...(options.signupAddedTemplate ? { signupAddedTemplate: options.signupAddedTemplate } : {}),
+      });
+      return { ok: true };
+    },
+  );
+
+  // ---- POST /teams/:id/avatar ----  (Admin uploads team photo)
+  fastify.post<{ Params: { id: string } }>('/teams/:id/avatar', async (req, reply) => {
+    const user = requireUser(req);
+    if (!options.avatarStore) {
+      reply.code(501);
+      return { error: 'AVATAR_STORE_NOT_CONFIGURED' };
+    }
+    const team = await options.repository.getTeam(req.params.id);
+    if (!team) throw new TeamNotFoundError();
+    if (!canAddMember(team, user)) {
+      reply.code(403);
+      return { error: 'NOT_AUTHORIZED' };
+    }
+    const parsed = teamAvatarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'invalid_payload' };
+    }
+    const decoded = decodeAvatarDataUrl(parsed.data.data);
+    if (!decoded) {
+      reply.code(400);
+      return { error: 'invalid_image' };
+    }
+    const result = await options.avatarStore.put({
+      key: `teams/${team.id}`,
+      bytes: decoded.bytes,
+      contentType: decoded.contentType,
+    });
+    const updated = await options.repository.updateTeam(team.id, {
+      avatarUrl: result.url,
+    });
+    return { team: updated };
+  });
+
+  // ---- DELETE /teams/:id/avatar ----
+  fastify.delete<{ Params: { id: string } }>('/teams/:id/avatar', async (req, reply) => {
+    const user = requireUser(req);
+    const team = await options.repository.getTeam(req.params.id);
+    if (!team) throw new TeamNotFoundError();
+    if (!canAddMember(team, user)) {
+      reply.code(403);
+      return { error: 'NOT_AUTHORIZED' };
+    }
+    if (options.avatarStore) {
+      await options.avatarStore.delete(`teams/${team.id}`);
+    }
+    const updated = await options.repository.updateTeam(team.id, { avatarUrl: null });
+    return { team: updated };
+  });
 
   // ---- POST /teams/:id/transfer-admin ----
   fastify.post<{ Params: { id: string } }>(

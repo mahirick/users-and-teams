@@ -302,6 +302,114 @@ export async function deleteTeam(input: DeleteTeamInput): Promise<void> {
   await input.repo.deleteTeam(team.id);
 }
 
+// ---- pending invites: list / cancel / resend ----
+
+export interface ListPendingInvitesInput {
+  repo: Repository;
+  actorId: string;
+  teamId: string;
+  now?: number;
+}
+
+export async function listPendingInvites(input: ListPendingInvitesInput) {
+  const { actor, team } = await loadActorAndMembership(
+    input.repo, input.teamId, input.actorId,
+  );
+  if (!canAddMember(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can view pending invites');
+  }
+  return input.repo.listPendingInvitesForTeam(team.id, input.now ?? Date.now());
+}
+
+export interface CancelPendingInviteInput {
+  repo: Repository;
+  actorId: string;
+  teamId: string;
+  tokenHash: string;
+}
+
+export async function cancelPendingInvite(input: CancelPendingInviteInput): Promise<void> {
+  const { actor, team } = await loadActorAndMembership(
+    input.repo, input.teamId, input.actorId,
+  );
+  if (!canAddMember(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can cancel invites');
+  }
+  const invite = await input.repo.findTeamInviteByHash(input.tokenHash);
+  if (!invite || invite.teamId !== team.id) {
+    throw new TeamNotFoundError();
+  }
+  await input.repo.deleteTeamInvite(input.tokenHash);
+}
+
+export interface ResendPendingInviteInput {
+  repo: Repository;
+  actorId: string;
+  teamId: string;
+  tokenHash: string;
+  transport: EmailTransport;
+  siteName: string;
+  siteUrl: string;
+  inviteTtlDays: number;
+  now?: number;
+  signupAddedTemplate?: typeof signupAddedToTeamEmail;
+}
+
+/**
+ * Re-send the magic-link signup email for a still-pending invite. The original
+ * row stays consumable (so when the user finally signs in they're still added
+ * to the team); we just refresh `expires_at` so it doesn't lapse.
+ */
+export async function resendPendingInvite(input: ResendPendingInviteInput): Promise<void> {
+  const now = input.now ?? Date.now();
+  const { actor, team } = await loadActorAndMembership(
+    input.repo, input.teamId, input.actorId,
+  );
+  if (!canAddMember(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can resend invites');
+  }
+  const invite = await input.repo.findTeamInviteByHash(input.tokenHash);
+  if (!invite || invite.teamId !== team.id) {
+    throw new TeamNotFoundError();
+  }
+  if (invite.consumedAt !== null) {
+    throw new NotAuthorizedError('That invite has already been consumed');
+  }
+
+  // Send a fresh email. We don't rotate the token because the consumer signs
+  // in with their email, not the token (auto-add-at-signup flow).
+  const signinUrl = new URL('/', input.siteUrl).toString();
+  const rendered = (input.signupAddedTemplate ?? signupAddedToTeamEmail)({
+    siteName: input.siteName,
+    siteUrl: input.siteUrl,
+    teamName: team.name,
+    addedByName: actor.displayName,
+    addedByEmail: actor.email,
+    signinUrl,
+  });
+  await input.transport.send({
+    to: invite.email,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+  });
+
+  // Push the expiry forward so the row stays fresh.
+  // Repository has no `updateTeamInvite` — easiest: delete + recreate.
+  await input.repo.deleteTeamInvite(invite.tokenHash);
+  await input.repo.createTeamInvite(
+    {
+      tokenHash: invite.tokenHash,
+      teamId: invite.teamId,
+      inviterId: actor.id,
+      email: invite.email,
+      role: invite.role,
+      expiresAt: now + input.inviteTtlDays * 86_400_000,
+    },
+    now,
+  );
+}
+
 // ---- editTeam (rename) ----
 
 export interface EditTeamInput {

@@ -19,6 +19,12 @@ import {
   UsersAndTeamsError,
 } from '../core/errors.js';
 import { mapUatError } from '../core/error-handler.js';
+import { deriveInitials } from '../core/avatar.js';
+import {
+  ALLOWED_AVATAR_MIME,
+  MAX_AVATAR_BYTES,
+  type AvatarStore,
+} from '../avatars/types.js';
 import type { Repository } from '../core/repository.js';
 import type { User } from '../core/types.js';
 import type { EmailTransport, RenderedEmail } from '../email/types.js';
@@ -71,6 +77,11 @@ export interface AuthPluginOptions {
   verifySuccessRedirect?: string;
   /** Where to redirect after a failed verify. Default: `${siteUrl}/auth/verify-result?status=error&reason=<code>`. */
   verifyErrorRedirect?: string;
+  /**
+   * Avatar storage. Pass to enable POST/DELETE /me/avatar (and POST/DELETE
+   * /teams/:id/avatar from teamsPlugin). Omit to keep avatars initials-only.
+   */
+  avatarStore?: AvatarStore;
 }
 
 const requestLinkSchema = z.object({
@@ -261,18 +272,180 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
       reply.code(401);
       return { user: null };
     }
-    return {
-      user: {
-        id: req.user.id,
+    return { user: publicUser(req.user) };
+  });
+
+  // ---- PATCH /me ----  (self-serve display-name edit)
+  fastify.patch('/me', async (req, reply) => {
+    if (!req.user) {
+      reply.code(401);
+      return { error: 'unauthenticated' };
+    }
+    const parsed = z
+      .object({
+        displayName: z.string().trim().min(1).max(120).nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'invalid_payload', issues: parsed.error.issues };
+    }
+
+    const patch: Parameters<Repository['updateUser']>[1] = {};
+    if (parsed.data.displayName !== undefined) {
+      patch.displayName = parsed.data.displayName;
+      // Recompute initials when name changes; color stays stable (id-derived).
+      patch.avatarInitials = deriveInitials({
+        displayName: parsed.data.displayName,
         email: req.user.email,
-        displayName: req.user.displayName,
-        role: req.user.role,
-        avatarColor: req.user.avatarColor,
-        avatarInitials: req.user.avatarInitials,
-      },
-    };
+      });
+    }
+    const updated = await options.repository.updateUser(req.user.id, patch);
+    return { user: publicUser(updated) };
+  });
+
+  // ---- POST /me/avatar ----  (upload a photo)
+  fastify.post('/me/avatar', async (req, reply) => {
+    if (!req.user) {
+      reply.code(401);
+      return { error: 'unauthenticated' };
+    }
+    if (!options.avatarStore) {
+      reply.code(501);
+      return { error: 'AVATAR_STORE_NOT_CONFIGURED' };
+    }
+
+    const parsed = avatarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: 'invalid_payload', issues: parsed.error.issues };
+    }
+    const decoded = decodeAvatarDataUrl(parsed.data.data);
+    if (!decoded) {
+      reply.code(400);
+      return { error: 'invalid_image' };
+    }
+
+    const result = await options.avatarStore.put({
+      key: `users/${req.user.id}`,
+      bytes: decoded.bytes,
+      contentType: decoded.contentType,
+    });
+    const updated = await options.repository.updateUser(req.user.id, {
+      avatarUrl: result.url,
+    });
+    return { user: publicUser(updated) };
+  });
+
+  // ---- DELETE /me/avatar ----  (revert to initials)
+  fastify.delete('/me/avatar', async (req, reply) => {
+    if (!req.user) {
+      reply.code(401);
+      return { error: 'unauthenticated' };
+    }
+    if (options.avatarStore) {
+      await options.avatarStore.delete(`users/${req.user.id}`);
+    }
+    const updated = await options.repository.updateUser(req.user.id, {
+      avatarUrl: null,
+    });
+    return { user: publicUser(updated) };
+  });
+
+  // ---- DELETE /me ----  (self-serve account deletion)
+  fastify.delete('/me', async (req, reply) => {
+    if (!req.user) {
+      reply.code(401);
+      return { error: 'unauthenticated' };
+    }
+    // Owners can't delete themselves — prevents footgun where the only
+    // system Owner deletes their own account and locks the consumer out.
+    if (req.user.role === 'owner') {
+      reply.code(403);
+      return {
+        error: 'OWNER_SELF_DELETE',
+        message: 'Owners cannot delete their own account. Have another Owner do it.',
+      };
+    }
+    await options.repository.deleteUser(req.user.id);
+    reply.clearCookie(cookieName, {
+      path: '/',
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
+    });
+    return { ok: true };
   });
 };
+
+function publicUser(u: User) {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.displayName,
+    role: u.role,
+    avatarColor: u.avatarColor,
+    avatarInitials: u.avatarInitials,
+    avatarUrl: u.avatarUrl,
+  };
+}
+
+const avatarSchema = z.object({
+  /** Data URL: `data:image/<jpeg|png|webp>;base64,<…>`. */
+  data: z.string().min(1),
+});
+
+interface DecodedAvatar {
+  bytes: Buffer;
+  contentType: string;
+}
+
+/**
+ * Validate and decode a base64 data-URL into a Buffer + content type.
+ * Rejects: malformed input, disallowed content types, oversized payloads,
+ * and bytes whose magic numbers don't match the declared mime.
+ */
+export function decodeAvatarDataUrl(input: string): DecodedAvatar | null {
+  const m = input.match(/^data:([\w/+.-]+);base64,(.+)$/);
+  if (!m) return null;
+  const mime = m[1]!.toLowerCase();
+  if (!ALLOWED_AVATAR_MIME.has(mime)) return null;
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(m[2]!, 'base64');
+  } catch {
+    return null;
+  }
+  if (bytes.length === 0 || bytes.length > MAX_AVATAR_BYTES) return null;
+  if (!magicMatches(bytes, mime)) return null;
+  return { bytes, contentType: mime };
+}
+
+function magicMatches(bytes: Buffer, mime: string): boolean {
+  if (mime === 'image/jpeg') {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (mime === 'image/png') {
+    return (
+      bytes.length >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    );
+  }
+  if (mime === 'image/webp') {
+    return (
+      bytes.length >= 12 &&
+      bytes.slice(0, 4).toString('ascii') === 'RIFF' &&
+      bytes.slice(8, 12).toString('ascii') === 'WEBP'
+    );
+  }
+  return false;
+}
 
 function successRedirect(options: AuthPluginOptions): string {
   if (options.verifySuccessRedirect) return options.verifySuccessRedirect;

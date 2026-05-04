@@ -9,8 +9,10 @@ export default defineConfig({
     port: 5273,
     proxy: {
       '/auth': { target: 'http://127.0.0.1:3100', changeOrigin: false },
+      '/me': { target: 'http://127.0.0.1:3100', changeOrigin: false },
       '/api': { target: 'http://127.0.0.1:3100', changeOrigin: false },
       '/teams': { target: 'http://127.0.0.1:3100', changeOrigin: false },
+      '/avatars': { target: 'http://127.0.0.1:3100', changeOrigin: false },
       '^/admin(/.*)?$': { target: 'http://127.0.0.1:3100', changeOrigin: false },
     },
   },

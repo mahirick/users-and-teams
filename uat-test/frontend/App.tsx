@@ -8,7 +8,9 @@ import {
   AuditLog,
   InviteForm,
   LoginForm,
+  PendingInvitesList,
   TeamMembersList,
+  TeamProfile,
   TeamSwitcher,
   VerifyResult,
   useAuth,
@@ -148,19 +150,24 @@ function TeamsPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ margin: '0 0 4px', fontWeight: 600 }}>{active.team.name}</h1>
+      <TeamProfile teamId={active.team.id} />
       <p style={{ margin: '0 0 24px', color: '#94a3b8', fontSize: 13 }}>
         you are <strong>{active.role === 'admin' ? 'Admin' : 'User'}</strong>
       </p>
       <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Members</h2>
       <TeamMembersList teamId={active.team.id} />
       {active.role === 'admin' && (
-        <section style={{ marginTop: 32, ...cardStyle }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>
-            Add a member
-          </h2>
-          <InviteForm teamId={active.team.id} />
-        </section>
+        <>
+          <section style={{ marginTop: 32 }}>
+            <PendingInvitesList teamId={active.team.id} />
+          </section>
+          <section style={{ marginTop: 32, ...cardStyle }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>
+              Add a member
+            </h2>
+            <InviteForm teamId={active.team.id} />
+          </section>
+        </>
       )}
     </div>
   );

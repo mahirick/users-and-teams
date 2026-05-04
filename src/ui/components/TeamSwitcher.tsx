@@ -56,6 +56,7 @@ export function TeamSwitcher({
             <Avatar
               initials={active.team.avatarInitials}
               color={active.team.avatarColor}
+              url={active.team.avatarUrl}
               size="sm"
               label={active.team.name}
             />
@@ -88,6 +89,7 @@ export function TeamSwitcher({
               <Avatar
                 initials={m.team.avatarInitials}
                 color={m.team.avatarColor}
+                url={m.team.avatarUrl}
                 size="sm"
                 label={m.team.name}
               />

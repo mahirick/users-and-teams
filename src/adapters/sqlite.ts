@@ -36,6 +36,7 @@ interface UserRow {
   status: string;
   avatar_color: string;
   avatar_initials: string;
+  avatar_url: string | null;
   created_at: number;
   last_seen_at: number | null;
 }
@@ -65,6 +66,7 @@ interface TeamRow {
   admin_id: string;
   avatar_color: string;
   avatar_initials: string;
+  avatar_url: string | null;
   created_at: number;
 }
 
@@ -103,6 +105,7 @@ const userFromRow = (r: UserRow): User => ({
   status: r.status as User['status'],
   avatarColor: r.avatar_color,
   avatarInitials: r.avatar_initials,
+  avatarUrl: r.avatar_url,
   createdAt: r.created_at,
   lastSeenAt: r.last_seen_at,
 });
@@ -132,6 +135,7 @@ const teamFromRow = (r: TeamRow): Team => ({
   adminId: r.admin_id,
   avatarColor: r.avatar_color,
   avatarInitials: r.avatar_initials,
+  avatarUrl: r.avatar_url,
   createdAt: r.created_at,
 });
 
@@ -232,6 +236,10 @@ export function createSqliteRepository(db: Sqlite): Repository {
       if (patch.avatarInitials !== undefined) {
         sets.push('avatar_initials = ?');
         params.push(patch.avatarInitials);
+      }
+      if (patch.avatarUrl !== undefined) {
+        sets.push('avatar_url = ?');
+        params.push(patch.avatarUrl);
       }
 
       if (sets.length > 0) {
@@ -384,7 +392,7 @@ export function createSqliteRepository(db: Sqlite): Repository {
 
     async updateTeam(id, patch: UpdateTeamInput) {
       const sets: string[] = [];
-      const params: Array<string | number> = [];
+      const params: Array<string | number | null> = [];
       if (patch.name !== undefined) {
         sets.push('name = ?');
         params.push(patch.name);
@@ -404,6 +412,10 @@ export function createSqliteRepository(db: Sqlite): Repository {
       if (patch.avatarInitials !== undefined) {
         sets.push('avatar_initials = ?');
         params.push(patch.avatarInitials);
+      }
+      if (patch.avatarUrl !== undefined) {
+        sets.push('avatar_url = ?');
+        params.push(patch.avatarUrl);
       }
       if (sets.length > 0) {
         params.push(id);
@@ -461,6 +473,7 @@ export function createSqliteRepository(db: Sqlite): Repository {
         status: string;
         u_avatar_color: string;
         u_avatar_initials: string;
+        u_avatar_url: string | null;
         u_created_at: number;
         last_seen_at: number | null;
       }
@@ -471,6 +484,7 @@ export function createSqliteRepository(db: Sqlite): Repository {
                   u.status,
                   u.avatar_color    AS u_avatar_color,
                   u.avatar_initials AS u_avatar_initials,
+                  u.avatar_url      AS u_avatar_url,
                   u.created_at AS u_created_at, u.last_seen_at
              FROM team_members tm
              JOIN users u ON u.id = tm.user_id
@@ -493,6 +507,7 @@ export function createSqliteRepository(db: Sqlite): Repository {
           status: r.status as User['status'],
           avatarColor: r.u_avatar_color,
           avatarInitials: r.u_avatar_initials,
+          avatarUrl: r.u_avatar_url,
           createdAt: r.u_created_at,
           lastSeenAt: r.last_seen_at,
         },
@@ -547,6 +562,23 @@ export function createSqliteRepository(db: Sqlite): Repository {
         now,
         tokenHash,
       );
+    },
+
+    async deleteTeamInvite(tokenHash) {
+      db.prepare('DELETE FROM team_invites WHERE token_hash = ?').run(tokenHash);
+    },
+
+    async listPendingInvitesForTeam(teamId, now) {
+      const rows = db
+        .prepare<[string, number], TeamInviteRow>(
+          `SELECT * FROM team_invites
+            WHERE team_id = ?
+              AND consumed_at IS NULL
+              AND expires_at >= ?
+            ORDER BY created_at DESC`,
+        )
+        .all(teamId, now);
+      return rows.map(inviteFromRow);
     },
 
     async listTeamInvites(teamId) {

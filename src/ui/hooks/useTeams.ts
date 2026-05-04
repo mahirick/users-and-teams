@@ -11,6 +11,7 @@ export interface PublicTeam {
   adminId: string;
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl: string | null;
   createdAt: number;
 }
 
