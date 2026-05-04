@@ -9,6 +9,66 @@ A reusable npm package for self-hosted user accounts and team management. Drops 
 - 🗄️ **Pluggable storage** — SQLite (`better-sqlite3`) and in-memory adapters; Postgres planned.
 - 📨 **Pluggable email** — Console (dev) and Resend (prod) transports; SMTP planned.
 
+## Architecture at a glance
+
+```
+┌───────────────────────── consumer Fastify app ─────────────────────────┐
+│                                                                        │
+│   app.register(authPlugin,  { repository, email, … })                  │
+│   app.register(teamsPlugin, { repository, email, … })                  │
+│   app.register(adminPlugin, { repository })                            │
+│                                                                        │
+│   app.get('/api/me/widgets', (req) => …req.user…)   ← consumer route   │
+│                                                                        │
+└──┬──────────────────────────┬───────────────────────────┬──────────────┘
+   │                          │                           │
+   ▼                          ▼                           ▼
+┌──────────────┐   ┌────────────────────┐    ┌──────────────────────────┐
+│  authPlugin  │   │    teamsPlugin     │    │       adminPlugin        │
+│              │   │                    │    │                          │
+│ /auth/*      │   │ /teams/*           │    │ /admin/*                 │
+│ onRequest →  │   │ ops + permissions  │    │ ops + audit instrumented │
+│ request.user │   │                    │    │                          │
+│ setError­    │   │   (errors thrown,  │    │   (errors thrown,        │
+│ Handler      │←──┤    handled by auth │←───┤    handled by auth)      │
+└──────┬───────┘   └────────┬───────────┘    └────────────┬─────────────┘
+       │                    │                              │
+       └────────────────────┼──────────────────────────────┘
+                            ▼
+              ┌────────────────────────────┐
+              │       Repository (IF)      │
+              ├────────────────────────────┤
+              │  createSqliteRepository    │
+              │  createMemoryRepository    │
+              └────────────┬───────────────┘
+                           │
+                  ┌────────▼─────────┐
+                  │  better-sqlite3  │      (consumer's chosen DB)
+                  │   schema:        │
+                  │   users / magic_links / sessions
+                  │   teams / team_members / team_invites
+                  │   audit_log / _uat_migrations
+                  └──────────────────┘
+```
+
+Frontend side mirrors this:
+
+```
+<UsersAndTeamsProvider apiBase="">
+  <LoginForm />            → POST /auth/request-link
+  <AccountMenu />          → GET /auth/me, POST /auth/logout(-all)
+  <TeamSwitcher />         → GET /teams, POST /teams
+  <TeamMembersList />      → GET /teams/:id, PATCH/DELETE /teams/:id/members/:userId
+  <InviteForm />           → POST /teams/:id/invites
+  <AcceptInvite />         → GET /teams/invites/accept
+  <AdminUsersTable />      → GET/PATCH /admin/users[…], POST /admin/users/:id/suspend
+  <AuditLog />             → GET /admin/audit-log
+  <VerifyResult />         (no API call — landing page after backend redirect)
+</UsersAndTeamsProvider>
+```
+
+`UsersAndTeamsProvider` exposes `useAuth()` and `useTeams()` for consumer-built UI.
+
 ## Install
 
 ```bash
@@ -194,6 +254,46 @@ npm run demo:frontend    # Vite + React on :5173
 
 Visit `http://localhost:5173`. The demo uses the console email transport — magic links and invite links are logged to the backend's stdout.
 
+The demo imports the package via Vite alias to `src/`, so source changes reload instantly. Use it for fast iteration.
+
+## Testing as a real consumer (`uat-test/`)
+
+For higher-fidelity testing, the repo also ships a `uat-test/` directory that installs the package via a real `file:..` npm dependency — it goes through `dist/` and the package's `exports` map exactly like an external consumer would.
+
+```bash
+cd uat-test
+npm install
+npm run dev:backend      # Fastify on :3100
+npm run dev:frontend     # Vite + React on :5273
+
+# After editing the package, reinstall:
+npm run update           # rebuilds the package + reinstalls
+```
+
+Sign in with `admin@test.local` to see the Admin tab. `uat-test/` is gitignored from the package repo.
+
+## Customizing error handling
+
+The package's `authPlugin` registers a `setErrorHandler` that maps every typed error (`NotAuthorizedError`, `RateLimitError`, `TeamNotFoundError`, …) to the right HTTP status. To override with your own handler while keeping the package's mappings:
+
+```ts
+import { mapUatError } from '@mahirick/users-and-teams';
+
+app.setErrorHandler((err, req, reply) => {
+  const mapped = mapUatError(err);
+  if (mapped) {
+    reply.code(mapped.statusCode);
+    if (mapped.headers) for (const [k, v] of Object.entries(mapped.headers)) reply.header(k, v);
+    return mapped.body;
+  }
+  // your own handling for non-package errors
+  reply.code(500);
+  return { error: 'oops' };
+});
+```
+
+Last-set-wins per Fastify scope rules.
+
 ## Why this design
 
 - **Magic-link only** — passwords are a liability. Email is the universal identifier.
@@ -201,6 +301,18 @@ Visit `http://localhost:5173`. The demo uses the console email transport — mag
 - **`request.user` populated by middleware** — every consumer route gets the same auth context with no boilerplate.
 - **Pluggable adapters** — start on SQLite, swap to Postgres without touching any business logic.
 - **CSS variables for theming** — `npm update` never overwrites your overrides.
+- **No JWT, no MFA, no OAuth in v1** — these are explicit non-goals (see [`SPEC.md`](./SPEC.md)). Adding them later is straightforward; carrying their complexity from day one is not.
+
+## Repository docs
+
+| File | Purpose |
+|------|---------|
+| [`README.md`](./README.md) | This file. Consumer-facing quickstart + reference. |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Dev setup, workflow, test strategy, release process. Start here if you're contributing. |
+| [`CLAUDE.md`](./CLAUDE.md) | AI-agent / contributor deep-dive. Architecture rules, conventions, common tasks, what NOT to do. **Read before any non-trivial change.** |
+| [`SPEC.md`](./SPEC.md) | Original design spec with all open questions resolved. Historical. |
+| [`PLAN.md`](./PLAN.md) | Six-stage build plan. Each stage maps to one commit on `main`. Historical. |
+| [`uat-test/README.md`](./uat-test/README.md) | (Local only — gitignored.) How to run the external-consumer test app. |
 
 ## License
 

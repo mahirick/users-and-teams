@@ -7,6 +7,7 @@
 
 export * from './core/types.js';
 export * from './core/errors.js';
+export { mapUatError, type MappedError } from './core/error-handler.js';
 export type { Repository } from './core/repository.js';
 
 export { createMemoryRepository } from './adapters/memory.js';

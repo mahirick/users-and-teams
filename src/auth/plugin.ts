@@ -18,6 +18,7 @@ import {
   UserSuspendedError,
   UsersAndTeamsError,
 } from '../core/errors.js';
+import { mapUatError } from '../core/error-handler.js';
 import type { Repository } from '../core/repository.js';
 import type { User } from '../core/types.js';
 import type { EmailTransport, RenderedEmail } from '../email/types.js';
@@ -101,6 +102,28 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
   // ---- @fastify/cookie ----
   // Idempotent — if the consumer already registered, fastify-plugin scopes it.
   await fastify.register(fastifyCookie);
+
+  // ---- shared error handler ----
+  // Maps every typed package error to a sensible status code. Set here (not in
+  // teams/admin plugins) so there's only one setErrorHandler call per scope —
+  // avoids Fastify's FSTWRN004 warning. Consumers who want their own handler
+  // can register it AFTER our plugins; Fastify's last-wins behavior lets them
+  // override (and they can call mapUatError(err) to delegate package errors).
+  fastify.setErrorHandler((err, _req, reply) => {
+    const mapped = mapUatError(err);
+    if (mapped) {
+      reply.code(mapped.statusCode);
+      if (mapped.headers) {
+        for (const [k, v] of Object.entries(mapped.headers)) reply.header(k, v);
+      }
+      return mapped.body;
+    }
+    fastify.log.error(err);
+    const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    reply.code(statusCode);
+    return { error: 'internal_error', message };
+  });
 
   // ---- preHandler: populate request.user from cookie ----
   fastify.decorateRequest('user', null);

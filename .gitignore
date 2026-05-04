@@ -20,3 +20,10 @@ demo/backend/.env
 .vscode/
 .idea/
 .DS_Store
+uat-test/
+
+# screenshots from Playwright smoke tests
+*.png
+
+# Playwright MCP artifacts
+.playwright-mcp/

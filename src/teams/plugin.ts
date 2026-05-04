@@ -5,16 +5,6 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { z } from 'zod';
-import {
-  InvalidTokenError,
-  NotAuthorizedError,
-  TeamNotFoundError,
-  TeamSlugTakenError,
-  TokenAlreadyConsumedError,
-  TokenExpiredError,
-  UserNotFoundError,
-  UsersAndTeamsError,
-} from '../core/errors.js';
 import type { Repository } from '../core/repository.js';
 import type { EmailTransport, RenderedEmail } from '../email/types.js';
 import {
@@ -86,41 +76,8 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
     return req.user;
   }
 
-  fastify.setErrorHandler((err, req, reply) => {
-    if (err instanceof NotAuthorizedError) {
-      reply.code(403);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof TeamNotFoundError) {
-      reply.code(404);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof UserNotFoundError) {
-      reply.code(404);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof TeamSlugTakenError) {
-      reply.code(409);
-      return { error: err.code, message: err.message };
-    }
-    if (
-      err instanceof InvalidTokenError ||
-      err instanceof TokenAlreadyConsumedError ||
-      err instanceof TokenExpiredError
-    ) {
-      reply.code(400);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof UsersAndTeamsError) {
-      reply.code(400);
-      return { error: err.code, message: err.message };
-    }
-    fastify.log.error(err);
-    const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    reply.code(statusCode);
-    return { error: 'internal_error', message };
-  });
+  // Error handling lives on authPlugin (shared mapUatError); declared as a
+  // dependency below so it always runs first. We re-throw and let it map.
 
   // ---- GET /teams (mine) ----
   fastify.get('/teams', async (req) => {

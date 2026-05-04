@@ -3,11 +3,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { z } from 'zod';
-import {
-  NotAuthorizedError,
-  UserNotFoundError,
-  UsersAndTeamsError,
-} from '../core/errors.js';
+import { NotAuthorizedError } from '../core/errors.js';
 import type { Repository } from '../core/repository.js';
 import type { User } from '../core/types.js';
 import {
@@ -53,25 +49,8 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
     return req.user;
   }
 
-  fastify.setErrorHandler((err, _req, reply) => {
-    if (err instanceof NotAuthorizedError) {
-      reply.code(403);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof UserNotFoundError) {
-      reply.code(404);
-      return { error: err.code, message: err.message };
-    }
-    if (err instanceof UsersAndTeamsError) {
-      reply.code(400);
-      return { error: err.code, message: err.message };
-    }
-    fastify.log.error(err);
-    const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    reply.code(statusCode);
-    return { error: 'internal_error', message };
-  });
+  // Error handling lives on authPlugin (shared mapUatError); declared as a
+  // dependency below.
 
   // ---- GET /admin/users ----
   fastify.get('/admin/users', async (req) => {
