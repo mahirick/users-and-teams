@@ -1,41 +1,41 @@
-// Teams operations: create, invite, accept, list, role/membership management,
-// transfer, delete. Each operation is a pure function over a Repository — the
-// Fastify plugin and the demo backend both compose these.
+// Teams operations: create, addMember, list, transfer, delete, edit. Pure
+// functions over a Repository — the Fastify plugin and the demo backend both
+// compose these.
+//
+// v2 model:
+//   - Each team has exactly one Admin (Team.adminId, mirrored as
+//     team_members.role='admin'). Everyone else is role='user'.
+//   - "Inviting" is auto-add. If the email matches an existing User, they are
+//     added immediately and emailed a notification. If the email is unknown,
+//     a TeamInvite row is recorded as a pending-membership marker, and a
+//     magic-link sign-up email is sent. On their first authenticated session,
+//     auth/session.consumePendingInvitesForUser materializes the membership.
 
 import { uuidv7 } from 'uuidv7';
 import { z } from 'zod';
 import {
-  InvalidTokenError,
+  AlreadyTeamMemberError,
   NotAuthorizedError,
+  TeamNameTakenError,
   TeamNotFoundError,
-  TeamSlugTakenError,
-  TokenAlreadyConsumedError,
-  TokenExpiredError,
   UserNotFoundError,
 } from '../core/errors.js';
+import { deriveInitials, normalizeTeamName, pickColor } from '../core/avatar.js';
 import type { Repository } from '../core/repository.js';
 import type { MemberRole, Team, TeamMember, User } from '../core/types.js';
 import { generateToken, hashToken } from '../auth/tokens.js';
-import { inviteEmail } from '../email/templates.js';
+import { addedToTeamEmail, signupAddedToTeamEmail } from '../email/templates.js';
 import type { EmailTransport, RenderedEmail } from '../email/types.js';
 import {
+  canAddMember,
   canDeleteTeam,
   canEditTeam,
-  canInvite,
   canRemoveMember,
-  canTransferOwnership,
-  canUpdateMemberRole,
+  canTransferAdmin,
 } from './permissions.js';
 
-const slugSchema = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .min(1, 'slug required')
-  .max(64, 'slug too long')
-  .regex(/^[a-z0-9-]+$/, 'slug must be lowercase alphanumeric or hyphens');
-
 const emailSchema = z.string().trim().email();
+const nameSchema = z.string().trim().min(1, 'name required').max(120, 'name too long');
 
 async function loadActorAndMembership(
   repo: Repository,
@@ -56,73 +56,97 @@ export interface CreateTeamInput {
   repo: Repository;
   actorId: string;
   name: string;
-  slug: string;
   now?: number;
 }
 
 export async function createTeam(input: CreateTeamInput): Promise<Team> {
-  const slug = slugSchema.parse(input.slug);
+  const name = nameSchema.parse(input.name);
+  const nameNormalized = normalizeTeamName(name);
   const now = input.now ?? Date.now();
 
   const actor = await input.repo.getUser(input.actorId);
   if (!actor) throw new UserNotFoundError(`Actor ${input.actorId} not found`);
 
-  const existing = await input.repo.findTeamBySlug(slug);
-  if (existing) throw new TeamSlugTakenError(slug);
+  const existing = await input.repo.findTeamByNormalizedName(nameNormalized);
+  if (existing) throw new TeamNameTakenError(name);
 
+  const id = uuidv7();
   const team = await input.repo.createTeam(
-    { id: uuidv7(), name: input.name.trim(), slug, ownerId: actor.id },
+    {
+      id,
+      name,
+      nameNormalized,
+      adminId: actor.id,
+      avatarColor: pickColor(id),
+      avatarInitials: deriveInitials({ displayName: name }),
+    },
     now,
   );
-  await input.repo.addTeamMember(team.id, actor.id, 'owner', now);
+  await input.repo.addTeamMember(team.id, actor.id, 'admin', now);
   return team;
 }
 
-// ---- inviteMember ----
+// ---- addMember (auto-add, no accept/reject) ----
 
-export interface InviteMemberInput {
+export interface AddMemberInput {
   repo: Repository;
   actorId: string;
   teamId: string;
   email: string;
-  role: MemberRole;
   transport: EmailTransport;
   siteName: string;
   siteUrl: string;
+  /** TTL for the magic-link signup invite (only used when email is unknown). */
   inviteTtlDays: number;
   now?: number;
-  template?: (args: {
-    siteName: string;
-    siteUrl: string;
-    teamName: string;
-    inviterName: string | null;
-    inviterEmail?: string;
-    link: string;
-  }) => RenderedEmail;
+  /** Optional template overrides. */
+  addedTemplate?: typeof addedToTeamEmail;
+  signupAddedTemplate?: typeof signupAddedToTeamEmail;
 }
 
-export interface InviteMemberResult {
-  ok: true;
-  email: string;
-}
+export type AddMemberResult =
+  | { status: 'added'; userId: string; member: TeamMember }
+  | { status: 'pending_signup'; email: string };
 
-export async function inviteMember(input: InviteMemberInput): Promise<InviteMemberResult> {
+export async function addMember(input: AddMemberInput): Promise<AddMemberResult> {
   const email = emailSchema.parse(input.email).toLowerCase();
-  if (input.role === 'owner') {
-    throw new Error('Cannot invite directly as owner; use transferOwnership.');
-  }
-
   const now = input.now ?? Date.now();
-  const { actor, team, membership } = await loadActorAndMembership(
+  const { actor, team } = await loadActorAndMembership(
     input.repo,
     input.teamId,
     input.actorId,
   );
 
-  if (!canInvite(team, actor, membership)) {
-    throw new NotAuthorizedError('Not allowed to invite to this team');
+  if (!canAddMember(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can add members');
   }
 
+  const existingUser = await input.repo.findUserByEmail(email);
+
+  if (existingUser) {
+    const already = await input.repo.getTeamMember(team.id, existingUser.id);
+    if (already) throw new AlreadyTeamMemberError();
+
+    const member = await input.repo.addTeamMember(team.id, existingUser.id, 'user', now);
+
+    const rendered = (input.addedTemplate ?? addedToTeamEmail)({
+      siteName: input.siteName,
+      siteUrl: input.siteUrl,
+      teamName: team.name,
+      addedByName: actor.displayName,
+      addedByEmail: actor.email,
+    });
+    await input.transport.send({
+      to: email,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
+    });
+
+    return { status: 'added', userId: existingUser.id, member };
+  }
+
+  // Unknown email — record pending invite and email a magic-link signup.
   const token = generateToken();
   await input.repo.createTeamInvite(
     {
@@ -130,24 +154,21 @@ export async function inviteMember(input: InviteMemberInput): Promise<InviteMemb
       teamId: team.id,
       inviterId: actor.id,
       email,
-      role: input.role,
+      role: 'user',
       expiresAt: now + input.inviteTtlDays * 86_400_000,
     },
     now,
   );
 
-  const link = new URL('/invites/accept', input.siteUrl);
-  link.searchParams.set('token', token);
-
-  const rendered = (input.template ?? inviteEmail)({
+  const signinUrl = new URL('/', input.siteUrl).toString();
+  const rendered = (input.signupAddedTemplate ?? signupAddedToTeamEmail)({
     siteName: input.siteName,
     siteUrl: input.siteUrl,
     teamName: team.name,
-    inviterName: actor.displayName,
-    inviterEmail: actor.email,
-    link: link.toString(),
+    addedByName: actor.displayName,
+    addedByEmail: actor.email,
+    signinUrl,
   });
-
   await input.transport.send({
     to: email,
     subject: rendered.subject,
@@ -155,45 +176,33 @@ export async function inviteMember(input: InviteMemberInput): Promise<InviteMemb
     text: rendered.text,
   });
 
-  return { ok: true, email };
+  return { status: 'pending_signup', email };
 }
 
-// ---- acceptInvite ----
-
-export interface AcceptInviteInput {
+/**
+ * Auto-consume any pending TeamInvite rows for this user's email. Called from
+ * auth/session.ts on every successful authentication (cheap query, single
+ * indexed lookup) so a user added before they signed up materializes their
+ * memberships on their first login.
+ */
+export async function consumePendingInvitesForUser(input: {
   repo: Repository;
-  token: string;
-  userId: string;
+  user: User;
   now?: number;
-}
-
-export async function acceptInvite(input: AcceptInviteInput): Promise<TeamMember> {
+}): Promise<TeamMember[]> {
   const now = input.now ?? Date.now();
-  const tokenHash = hashToken(input.token);
-  const invite = await input.repo.findTeamInviteByHash(tokenHash);
-  if (!invite) throw new InvalidTokenError('Invite not found');
-  if (invite.consumedAt !== null) throw new TokenAlreadyConsumedError();
-  if (invite.expiresAt < now) throw new TokenExpiredError('Invite expired');
-
-  const user = await input.repo.getUser(input.userId);
-  if (!user) throw new UserNotFoundError();
-
-  // The invite was issued to a specific email — only that user can accept.
-  if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
-    throw new NotAuthorizedError(
-      `Invite was issued to ${invite.email}, not ${user.email}`,
-    );
+  const pending = await input.repo.findPendingInvitesForEmail(input.user.email, now);
+  const memberships: TeamMember[] = [];
+  for (const inv of pending) {
+    const existing = await input.repo.getTeamMember(inv.teamId, input.user.id);
+    if (!existing) {
+      memberships.push(
+        await input.repo.addTeamMember(inv.teamId, input.user.id, inv.role, now),
+      );
+    }
+    await input.repo.consumeTeamInvite(inv.tokenHash, now);
   }
-
-  await input.repo.consumeTeamInvite(tokenHash, now);
-
-  const existing = await input.repo.getTeamMember(invite.teamId, user.id);
-  if (existing) {
-    // Already a member — return current membership without changing role
-    return existing;
-  }
-
-  return input.repo.addTeamMember(invite.teamId, user.id, invite.role, now);
+  return memberships;
 }
 
 // ---- listMyTeams + listMembers ----
@@ -216,35 +225,7 @@ export async function listMembers(input: ListMembersInput) {
   return input.repo.listTeamMembers(input.teamId);
 }
 
-// ---- updateMemberRole ----
-
-export interface UpdateMemberRoleInput {
-  repo: Repository;
-  actorId: string;
-  teamId: string;
-  userId: string;
-  role: MemberRole;
-}
-
-export async function updateMemberRole(input: UpdateMemberRoleInput): Promise<TeamMember> {
-  if (input.role === 'owner') {
-    throw new Error('Use transferOwnership to grant ownership.');
-  }
-  const { actor, team, membership } = await loadActorAndMembership(
-    input.repo, input.teamId, input.actorId,
-  );
-  if (!canUpdateMemberRole(team, actor, membership)) {
-    throw new NotAuthorizedError('Not allowed to change roles in this team');
-  }
-  const target = await input.repo.getTeamMember(input.teamId, input.userId);
-  if (!target) throw new UserNotFoundError('Target is not a member of this team');
-  if (target.role === 'owner') {
-    throw new Error('Cannot change the owner role via updateMemberRole.');
-  }
-  return input.repo.updateTeamMemberRole(input.teamId, input.userId, input.role);
-}
-
-// ---- removeMember ----
+// ---- removeMember (admin removes someone, or user leaves) ----
 
 export interface RemoveMemberInput {
   repo: Repository;
@@ -262,8 +243,8 @@ export async function removeMember(input: RemoveMemberInput): Promise<void> {
 
   if (!canRemoveMember(team, actor, membership, target)) {
     throw new NotAuthorizedError(
-      target.role === 'owner'
-        ? 'Owners cannot be removed; transfer ownership first.'
+      target.role === 'admin'
+        ? 'Admins cannot leave; transfer admin first.'
         : 'Not allowed to remove this member',
     );
   }
@@ -271,34 +252,36 @@ export async function removeMember(input: RemoveMemberInput): Promise<void> {
   await input.repo.removeTeamMember(input.teamId, input.userId);
 }
 
-// ---- transferOwnership ----
+// ---- transferAdmin ----
 
-export interface TransferOwnershipInput {
+export interface TransferAdminInput {
   repo: Repository;
   actorId: string;
   teamId: string;
   toUserId: string;
 }
 
-export async function transferOwnership(input: TransferOwnershipInput): Promise<void> {
+export async function transferAdmin(input: TransferAdminInput): Promise<void> {
   const { actor, team } = await loadActorAndMembership(
     input.repo, input.teamId, input.actorId,
   );
 
-  if (!canTransferOwnership(team, actor)) {
-    throw new NotAuthorizedError('Only the current owner can transfer ownership');
+  if (!canTransferAdmin(team, actor)) {
+    throw new NotAuthorizedError('Only the current Admin can transfer admin');
   }
 
-  // Recipient must already be a member of the team.
   const recipient = await input.repo.getTeamMember(input.teamId, input.toUserId);
   if (!recipient) {
-    throw new UserNotFoundError('New owner must be a current team member');
+    throw new UserNotFoundError('New admin must be a current team member');
   }
 
-  // Update team owner_id, promote recipient to owner, demote previous owner to admin.
-  await input.repo.updateTeam(input.teamId, { ownerId: input.toUserId });
-  await input.repo.updateTeamMemberRole(input.teamId, input.toUserId, 'owner');
-  await input.repo.updateTeamMemberRole(input.teamId, actor.id, 'admin');
+  if (recipient.userId === team.adminId) {
+    return; // already admin, nothing to do
+  }
+
+  await input.repo.updateTeam(input.teamId, { adminId: input.toUserId });
+  await input.repo.updateTeamMemberRole(input.teamId, input.toUserId, 'admin');
+  await input.repo.updateTeamMemberRole(input.teamId, actor.id, 'user');
 }
 
 // ---- deleteTeam ----
@@ -310,42 +293,44 @@ export interface DeleteTeamInput {
 }
 
 export async function deleteTeam(input: DeleteTeamInput): Promise<void> {
-  const { actor, team, membership } = await loadActorAndMembership(
+  const { actor, team } = await loadActorAndMembership(
     input.repo, input.teamId, input.actorId,
   );
-  if (!canDeleteTeam(team, actor, membership)) {
-    throw new NotAuthorizedError('Only the owner can delete a team');
+  if (!canDeleteTeam(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can delete a team');
   }
   await input.repo.deleteTeam(team.id);
 }
 
-// ---- editTeam (name/slug) ----
+// ---- editTeam (rename) ----
 
 export interface EditTeamInput {
   repo: Repository;
   actorId: string;
   teamId: string;
-  name?: string;
-  slug?: string;
+  name: string;
 }
 
 export async function editTeam(input: EditTeamInput): Promise<Team> {
-  const { actor, team, membership } = await loadActorAndMembership(
+  const { actor, team } = await loadActorAndMembership(
     input.repo, input.teamId, input.actorId,
   );
-  if (!canEditTeam(team, actor, membership)) {
-    throw new NotAuthorizedError('Not allowed to edit this team');
+  if (!canEditTeam(team, actor)) {
+    throw new NotAuthorizedError('Only the team Admin can rename this team');
   }
 
-  const patch: { name?: string; slug?: string } = {};
-  if (input.name !== undefined) patch.name = input.name.trim();
-  if (input.slug !== undefined) {
-    const newSlug = slugSchema.parse(input.slug);
-    if (newSlug !== team.slug) {
-      const conflict = await input.repo.findTeamBySlug(newSlug);
-      if (conflict) throw new TeamSlugTakenError(newSlug);
-      patch.slug = newSlug;
-    }
+  const name = nameSchema.parse(input.name);
+  const nameNormalized = normalizeTeamName(name);
+  if (nameNormalized !== team.nameNormalized) {
+    const conflict = await input.repo.findTeamByNormalizedName(nameNormalized);
+    if (conflict && conflict.id !== team.id) throw new TeamNameTakenError(name);
   }
-  return input.repo.updateTeam(team.id, patch);
+
+  return input.repo.updateTeam(team.id, {
+    name,
+    nameNormalized,
+    avatarInitials: deriveInitials({ displayName: name }),
+  });
 }
+
+export type { MemberRole };

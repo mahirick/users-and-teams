@@ -35,10 +35,29 @@ export function repositoryContract(
 
       it('createUser respects role override', async () => {
         const user = await repo.createUser(
-          { email: 'admin@example.com', role: 'admin' },
+          { email: 'owner@example.com', role: 'owner' },
           T0,
         );
-        expect(user.role).toBe('admin');
+        expect(user.role).toBe('owner');
+      });
+
+      it('createUser fills avatar columns with placeholders when omitted', async () => {
+        const user = await repo.createUser({ email: 'p@example.com' }, T0);
+        expect(user.avatarColor).toMatch(/^#/);
+        expect(user.avatarInitials).toBeTypeOf('string');
+      });
+
+      it('createUser stores avatar columns when provided', async () => {
+        const user = await repo.createUser(
+          {
+            email: 'a@example.com',
+            avatarColor: '#0EA5E9',
+            avatarInitials: 'AB',
+          },
+          T0,
+        );
+        expect(user.avatarColor).toBe('#0EA5E9');
+        expect(user.avatarInitials).toBe('AB');
       });
 
       it('createUser sets displayName when provided', async () => {
@@ -74,14 +93,24 @@ export function repositoryContract(
         const u = await repo.createUser({ email: 'a@example.com' }, T0);
         const updated = await repo.updateUser(u.id, {
           displayName: 'Alice',
-          role: 'admin',
+          role: 'owner',
           status: 'suspended',
           lastSeenAt: T0 + 1000,
         });
         expect(updated.displayName).toBe('Alice');
-        expect(updated.role).toBe('admin');
+        expect(updated.role).toBe('owner');
         expect(updated.status).toBe('suspended');
         expect(updated.lastSeenAt).toBe(T0 + 1000);
+      });
+
+      it('updateUser patches avatar fields', async () => {
+        const u = await repo.createUser({ email: 'a@example.com' }, T0);
+        const updated = await repo.updateUser(u.id, {
+          avatarColor: '#34C759',
+          avatarInitials: 'AA',
+        });
+        expect(updated.avatarColor).toBe('#34C759');
+        expect(updated.avatarInitials).toBe('AA');
       });
 
       it('updateUser can change email', async () => {
@@ -246,42 +275,46 @@ export function repositoryContract(
       it('createTeam round-trips', async () => {
         const owner = await makeOwner();
         const team = await repo.createTeam(
-          { id: 'team-1', name: 'Team One', slug: 'team-one', ownerId: owner.id },
+          { id: 'team-1', name: 'Team One', adminId: owner.id },
           T0,
         );
         expect(team.id).toBe('team-1');
-        expect(team.slug).toBe('team-one');
-        expect(team.ownerId).toBe(owner.id);
+        expect(team.name).toBe('Team One');
+        expect(team.adminId).toBe(owner.id);
+        expect(team.nameNormalized).toBe('team one');
 
         const fetched = await repo.getTeam('team-1');
         expect(fetched).toEqual(team);
       });
 
-      it('findTeamBySlug returns the team', async () => {
+      it('findTeamByNormalizedName returns the team', async () => {
         const owner = await makeOwner();
         await repo.createTeam(
-          { id: 'team-2', name: 'Two', slug: 'two', ownerId: owner.id },
+          { id: 'team-2', name: 'Two', nameNormalized: 'two', adminId: owner.id },
           T0,
         );
-        const t = await repo.findTeamBySlug('two');
+        const t = await repo.findTeamByNormalizedName('two');
         expect(t!.id).toBe('team-2');
       });
 
-      it('updateTeam patches name and slug', async () => {
+      it('updateTeam patches name and nameNormalized', async () => {
         const owner = await makeOwner();
         await repo.createTeam(
-          { id: 'team-3', name: 'Old', slug: 'old', ownerId: owner.id },
+          { id: 'team-3', name: 'Old', nameNormalized: 'old', adminId: owner.id },
           T0,
         );
-        const updated = await repo.updateTeam('team-3', { name: 'New', slug: 'new' });
+        const updated = await repo.updateTeam('team-3', {
+          name: 'New',
+          nameNormalized: 'new',
+        });
         expect(updated.name).toBe('New');
-        expect(updated.slug).toBe('new');
+        expect(updated.nameNormalized).toBe('new');
       });
 
       it('deleteTeam removes it', async () => {
         const owner = await makeOwner();
         await repo.createTeam(
-          { id: 'team-4', name: 'Z', slug: 'z', ownerId: owner.id },
+          { id: 'team-4', name: 'Z', adminId: owner.id },
           T0,
         );
         await repo.deleteTeam('team-4');
@@ -291,15 +324,15 @@ export function repositoryContract(
       it('listTeamsForUser returns teams the user is a member of', async () => {
         const owner = await makeOwner();
         const teamA = await repo.createTeam(
-          { id: 'a', name: 'A', slug: 'a', ownerId: owner.id },
+          { id: 'a', name: 'A', nameNormalized: 'a', adminId: owner.id },
           T0,
         );
         const teamB = await repo.createTeam(
-          { id: 'b', name: 'B', slug: 'b', ownerId: owner.id },
+          { id: 'b', name: 'B', nameNormalized: 'b', adminId: owner.id },
           T0,
         );
-        await repo.addTeamMember(teamA.id, owner.id, 'owner', T0);
-        await repo.addTeamMember(teamB.id, owner.id, 'member', T0);
+        await repo.addTeamMember(teamA.id, owner.id, 'admin', T0);
+        await repo.addTeamMember(teamB.id, owner.id, 'user', T0);
 
         const teams = await repo.listTeamsForUser(owner.id);
         expect(teams).toHaveLength(2);
@@ -314,7 +347,7 @@ export function repositoryContract(
         const owner = await repo.createUser({ email: 'o@example.com' }, T0);
         const member = await repo.createUser({ email: 'm@example.com' }, T0);
         await repo.createTeam(
-          { id: 'tm', name: 'TM', slug: 'tm', ownerId: owner.id },
+          { id: 'tm', name: 'TM', adminId: owner.id },
           T0,
         );
         const tm = await repo.addTeamMember('tm', member.id, 'admin', T0 + 5);
@@ -327,11 +360,11 @@ export function repositoryContract(
         const owner = await repo.createUser({ email: 'o2@example.com' }, T0);
         const m = await repo.createUser({ email: 'm2@example.com' }, T0);
         await repo.createTeam(
-          { id: 'tm2', name: 'TM2', slug: 'tm2', ownerId: owner.id },
+          { id: 'tm2', name: 'TM2', adminId: owner.id },
           T0,
         );
-        await repo.addTeamMember('tm2', owner.id, 'owner', T0);
-        await repo.addTeamMember('tm2', m.id, 'member', T0);
+        await repo.addTeamMember('tm2', owner.id, 'admin', T0);
+        await repo.addTeamMember('tm2', m.id, 'user', T0);
 
         const list = await repo.listTeamMembers('tm2');
         expect(list).toHaveLength(2);
@@ -343,10 +376,10 @@ export function repositoryContract(
         const owner = await repo.createUser({ email: 'o3@example.com' }, T0);
         const m = await repo.createUser({ email: 'm3@example.com' }, T0);
         await repo.createTeam(
-          { id: 'tm3', name: 'TM3', slug: 'tm3', ownerId: owner.id },
+          { id: 'tm3', name: 'TM3', adminId: owner.id },
           T0,
         );
-        await repo.addTeamMember('tm3', m.id, 'member', T0);
+        await repo.addTeamMember('tm3', m.id, 'user', T0);
         await repo.updateTeamMemberRole('tm3', m.id, 'admin');
         const tm = await repo.getTeamMember('tm3', m.id);
         expect(tm!.role).toBe('admin');
@@ -356,10 +389,10 @@ export function repositoryContract(
         const owner = await repo.createUser({ email: 'o4@example.com' }, T0);
         const m = await repo.createUser({ email: 'm4@example.com' }, T0);
         await repo.createTeam(
-          { id: 'tm4', name: 'TM4', slug: 'tm4', ownerId: owner.id },
+          { id: 'tm4', name: 'TM4', adminId: owner.id },
           T0,
         );
-        await repo.addTeamMember('tm4', m.id, 'member', T0);
+        await repo.addTeamMember('tm4', m.id, 'user', T0);
         await repo.removeTeamMember('tm4', m.id);
         expect(await repo.getTeamMember('tm4', m.id)).toBeNull();
       });
@@ -367,10 +400,10 @@ export function repositoryContract(
       it('deleting a team cascades to members', async () => {
         const owner = await repo.createUser({ email: 'o5@example.com' }, T0);
         await repo.createTeam(
-          { id: 'tm5', name: 'TM5', slug: 'tm5', ownerId: owner.id },
+          { id: 'tm5', name: 'TM5', adminId: owner.id },
           T0,
         );
-        await repo.addTeamMember('tm5', owner.id, 'owner', T0);
+        await repo.addTeamMember('tm5', owner.id, 'admin', T0);
         await repo.deleteTeam('tm5');
         expect(await repo.getTeamMember('tm5', owner.id)).toBeNull();
       });
@@ -381,7 +414,7 @@ export function repositoryContract(
       async function setup() {
         const owner = await repo.createUser({ email: `inv-${Math.random()}@x.com` }, T0);
         const team = await repo.createTeam(
-          { id: 'inv-team', name: 'Inv', slug: 'inv', ownerId: owner.id },
+          { id: `inv-team-${Math.random()}`, name: `Inv-${Math.random()}`, adminId: owner.id },
           T0,
         );
         return { owner, team };
@@ -395,14 +428,14 @@ export function repositoryContract(
             teamId: team.id,
             inviterId: owner.id,
             email: 'guest@example.com',
-            role: 'member',
+            role: 'user',
             expiresAt: T0 + 7 * 86_400_000,
           },
           T0,
         );
         const invite = await repo.findTeamInviteByHash('inv-1');
         expect(invite!.email).toBe('guest@example.com');
-        expect(invite!.role).toBe('member');
+        expect(invite!.role).toBe('user');
       });
 
       it('consumeTeamInvite marks consumedAt', async () => {
@@ -413,7 +446,7 @@ export function repositoryContract(
             teamId: team.id,
             inviterId: owner.id,
             email: 'g@example.com',
-            role: 'member',
+            role: 'user',
             expiresAt: T0 + 1000,
           },
           T0,
@@ -431,7 +464,7 @@ export function repositoryContract(
             teamId: team.id,
             inviterId: owner.id,
             email: 'a@example.com',
-            role: 'member',
+            role: 'user',
             expiresAt: T0 + 1000,
           },
           T0,
@@ -449,6 +482,63 @@ export function repositoryContract(
         );
         const invites = await repo.listTeamInvites(team.id);
         expect(invites).toHaveLength(2);
+      });
+
+      it('findPendingInvitesForEmail filters by email + un-consumed + un-expired', async () => {
+        const { owner, team } = await setup();
+        // pending
+        await repo.createTeamInvite(
+          {
+            tokenHash: 'inv-pending',
+            teamId: team.id,
+            inviterId: owner.id,
+            email: 'pending@example.com',
+            role: 'user',
+            expiresAt: T0 + 60_000,
+          },
+          T0,
+        );
+        // consumed
+        await repo.createTeamInvite(
+          {
+            tokenHash: 'inv-consumed',
+            teamId: team.id,
+            inviterId: owner.id,
+            email: 'pending@example.com',
+            role: 'user',
+            expiresAt: T0 + 60_000,
+          },
+          T0,
+        );
+        await repo.consumeTeamInvite('inv-consumed', T0);
+        // expired
+        await repo.createTeamInvite(
+          {
+            tokenHash: 'inv-expired',
+            teamId: team.id,
+            inviterId: owner.id,
+            email: 'pending@example.com',
+            role: 'user',
+            expiresAt: T0 - 1,
+          },
+          T0,
+        );
+        // wrong email
+        await repo.createTeamInvite(
+          {
+            tokenHash: 'inv-other',
+            teamId: team.id,
+            inviterId: owner.id,
+            email: 'other@example.com',
+            role: 'user',
+            expiresAt: T0 + 60_000,
+          },
+          T0,
+        );
+
+        const pending = await repo.findPendingInvitesForEmail('pending@example.com', T0);
+        expect(pending).toHaveLength(1);
+        expect(pending[0]!.tokenHash).toBe('inv-pending');
       });
     });
 

@@ -2,24 +2,21 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createMemoryRepository } from '../adapters/memory.js';
 import { consoleTransport, type ConsoleTransport } from '../email/console.js';
 import {
+  AlreadyTeamMemberError,
   NotAuthorizedError,
+  TeamNameTakenError,
   TeamNotFoundError,
-  TeamSlugTakenError,
-  TokenAlreadyConsumedError,
-  TokenExpiredError,
-  InvalidTokenError,
 } from '../core/errors.js';
-import { hashToken } from '../auth/tokens.js';
 import {
-  acceptInvite,
+  addMember,
+  consumePendingInvitesForUser,
   createTeam,
   deleteTeam,
-  inviteMember,
+  editTeam,
   listMembers,
   listMyTeams,
   removeMember,
-  transferOwnership,
-  updateMemberRole,
+  transferAdmin,
 } from './operations.js';
 
 const T0 = 1_700_000_000_000;
@@ -33,85 +30,147 @@ describe('teams operations', () => {
     transport = consoleTransport({ captureOnly: true });
   });
 
-  async function seedUser(email: string, role: 'user' | 'admin' = 'user') {
+  async function seedUser(email: string, role: 'user' | 'owner' = 'user') {
     return repo.createUser({ email, role }, T0);
   }
 
   describe('createTeam', () => {
-    it('creates the team and adds the actor as owner', async () => {
-      const u = await seedUser('owner@example.com');
+    it('creates the team and adds the actor as Admin', async () => {
+      const u = await seedUser('admin@example.com');
       const team = await createTeam({
         repo,
         actorId: u.id,
         name: 'My Team',
-        slug: 'my-team',
         now: T0,
       });
 
       expect(team.name).toBe('My Team');
-      expect(team.slug).toBe('my-team');
-      expect(team.ownerId).toBe(u.id);
+      expect(team.adminId).toBe(u.id);
+      expect(team.nameNormalized).toBe('my team');
 
       const member = await repo.getTeamMember(team.id, u.id);
-      expect(member?.role).toBe('owner');
+      expect(member?.role).toBe('admin');
     });
 
-    it('rejects a duplicate slug', async () => {
+    it('rejects a duplicate normalized name', async () => {
       const u = await seedUser('o@example.com');
-      await createTeam({ repo, actorId: u.id, name: 'A', slug: 'taken', now: T0 });
+      await createTeam({ repo, actorId: u.id, name: 'Taken', now: T0 });
       await expect(
-        createTeam({ repo, actorId: u.id, name: 'B', slug: 'taken', now: T0 }),
-      ).rejects.toBeInstanceOf(TeamSlugTakenError);
+        createTeam({ repo, actorId: u.id, name: '  TAKEN ', now: T0 + 1 }),
+      ).rejects.toBeInstanceOf(TeamNameTakenError);
+    });
+
+    it('computes avatar fields', async () => {
+      const u = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: u.id, name: 'Acme Corp', now: T0 });
+      expect(team.avatarColor).toMatch(/^#/);
+      expect(team.avatarInitials).toBe('AC');
     });
   });
 
-  describe('inviteMember', () => {
+  describe('addMember', () => {
     async function setup() {
-      const owner = await seedUser('o@example.com');
+      const admin = await seedUser('admin@example.com');
       const team = await createTeam({
-        repo, actorId: owner.id, name: 'T', slug: 't', now: T0,
+        repo,
+        actorId: admin.id,
+        name: 'Engineering',
+        now: T0,
       });
-      return { owner, team };
+      return { admin, team };
     }
 
-    it('owner can invite; emails are sent and stored as hashed tokens', async () => {
-      const { owner, team } = await setup();
-      await inviteMember({
+    it('adds an existing user immediately and emails a notification', async () => {
+      const { admin, team } = await setup();
+      const target = await seedUser('member@example.com');
+
+      const result = await addMember({
         repo,
-        actorId: owner.id,
+        actorId: admin.id,
         teamId: team.id,
-        email: 'guest@example.com',
-        role: 'member',
+        email: 'member@example.com',
+        transport,
+        siteName: 'App',
+        siteUrl: 'https://app.example.com',
+        inviteTtlDays: 7,
+        now: T0 + 1000,
+      });
+
+      expect(result.status).toBe('added');
+      if (result.status === 'added') {
+        expect(result.userId).toBe(target.id);
+      }
+      expect(transport.captured).toHaveLength(1);
+      expect(transport.captured[0]!.to).toBe('member@example.com');
+      const member = await repo.getTeamMember(team.id, target.id);
+      expect(member?.role).toBe('user');
+    });
+
+    it('creates a pending invite and emails a sign-up link for unknown emails', async () => {
+      const { admin, team } = await setup();
+
+      const result = await addMember({
+        repo,
+        actorId: admin.id,
+        teamId: team.id,
+        email: 'newcomer@example.com',
+        transport,
+        siteName: 'App',
+        siteUrl: 'https://app.example.com',
+        inviteTtlDays: 7,
+        now: T0 + 1000,
+      });
+
+      expect(result.status).toBe('pending_signup');
+      expect(transport.captured[0]!.to).toBe('newcomer@example.com');
+      const pending = await repo.findPendingInvitesForEmail(
+        'newcomer@example.com',
+        T0 + 2000,
+      );
+      expect(pending).toHaveLength(1);
+      expect(pending[0]!.teamId).toBe(team.id);
+    });
+
+    it('rejects a duplicate add for an existing member', async () => {
+      const { admin, team } = await setup();
+      await seedUser('m@example.com');
+      await addMember({
+        repo,
+        actorId: admin.id,
+        teamId: team.id,
+        email: 'm@example.com',
         transport,
         siteName: 'App',
         siteUrl: 'https://app.example.com',
         inviteTtlDays: 7,
         now: T0,
       });
-
-      expect(transport.captured).toHaveLength(1);
-      expect(transport.captured[0]!.to).toBe('guest@example.com');
-      const match = transport.captured[0]!.text.match(
-        /invites\/accept\?token=([A-Za-z0-9_-]+)/,
-      );
-      expect(match).not.toBeNull();
-      const invite = await repo.findTeamInviteByHash(hashToken(match![1]!));
-      expect(invite?.email).toBe('guest@example.com');
-      expect(invite?.role).toBe('member');
+      await expect(
+        addMember({
+          repo,
+          actorId: admin.id,
+          teamId: team.id,
+          email: 'm@example.com',
+          transport,
+          siteName: 'App',
+          siteUrl: 'https://app.example.com',
+          inviteTtlDays: 7,
+          now: T0 + 1,
+        }),
+      ).rejects.toBeInstanceOf(AlreadyTeamMemberError);
     });
 
-    it('regular members cannot invite', async () => {
-      const { owner, team } = await setup();
-      const memberUser = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, memberUser.id, 'member', T0);
+    it('regular Users cannot add members', async () => {
+      const { admin, team } = await setup();
+      const u = await seedUser('u@example.com');
+      await repo.addTeamMember(team.id, u.id, 'user', T0);
 
       await expect(
-        inviteMember({
+        addMember({
           repo,
-          actorId: memberUser.id,
+          actorId: u.id,
           teamId: team.id,
           email: 'g@example.com',
-          role: 'member',
           transport,
           siteName: 'App',
           siteUrl: 'https://app.example.com',
@@ -119,230 +178,189 @@ describe('teams operations', () => {
           now: T0,
         }),
       ).rejects.toBeInstanceOf(NotAuthorizedError);
-      void owner; // owner unused but kept for setup symmetry
+      void admin;
     });
   });
 
-  describe('acceptInvite', () => {
-    async function setupInvite() {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({
-        repo, actorId: owner.id, name: 'T', slug: 't', now: T0,
+  describe('consumePendingInvitesForUser', () => {
+    it('materializes memberships from pending invites and consumes the rows', async () => {
+      const admin = await seedUser('admin@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
+      // Pending add for an unknown email
+      await addMember({
+        repo,
+        actorId: admin.id,
+        teamId: team.id,
+        email: 'lazy@example.com',
+        transport,
+        siteName: 'App',
+        siteUrl: 'https://app.example.com',
+        inviteTtlDays: 7,
+        now: T0,
       });
-      const invitee = await seedUser('guest@example.com');
-      const token = 'inv-token-1';
-      await repo.createTeamInvite(
-        {
-          tokenHash: hashToken(token),
-          teamId: team.id,
-          inviterId: owner.id,
-          email: 'guest@example.com',
-          role: 'admin',
-          expiresAt: T0 + 7 * 86_400_000,
-        },
-        T0,
+      // Now they sign up
+      const newUser = await seedUser('lazy@example.com');
+
+      const memberships = await consumePendingInvitesForUser({
+        repo,
+        user: newUser,
+        now: T0 + 1000,
+      });
+
+      expect(memberships).toHaveLength(1);
+      expect(memberships[0]!.teamId).toBe(team.id);
+      expect(memberships[0]!.role).toBe('user');
+
+      const stillPending = await repo.findPendingInvitesForEmail(
+        'lazy@example.com',
+        T0 + 2000,
       );
-      return { team, invitee, token };
-    }
-
-    it('adds the user to the team with the invited role', async () => {
-      const { team, invitee, token } = await setupInvite();
-      await acceptInvite({ repo, token, userId: invitee.id, now: T0 + 1000 });
-
-      const member = await repo.getTeamMember(team.id, invitee.id);
-      expect(member?.role).toBe('admin');
-    });
-
-    it('marks the invite consumed', async () => {
-      const { invitee, token } = await setupInvite();
-      await acceptInvite({ repo, token, userId: invitee.id, now: T0 + 1000 });
-
-      const invite = await repo.findTeamInviteByHash(hashToken(token));
-      expect(invite?.consumedAt).toBe(T0 + 1000);
-    });
-
-    it('rejects an already-consumed invite', async () => {
-      const { invitee, token } = await setupInvite();
-      await acceptInvite({ repo, token, userId: invitee.id, now: T0 + 1000 });
-      await expect(
-        acceptInvite({ repo, token, userId: invitee.id, now: T0 + 2000 }),
-      ).rejects.toBeInstanceOf(TokenAlreadyConsumedError);
-    });
-
-    it('rejects an expired invite', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
-      const invitee = await seedUser('g@example.com');
-      const token = 'expired-token';
-      await repo.createTeamInvite(
-        {
-          tokenHash: hashToken(token),
-          teamId: team.id,
-          inviterId: owner.id,
-          email: 'g@example.com',
-          role: 'member',
-          expiresAt: T0 + 1,
-        },
-        T0,
-      );
-      await expect(
-        acceptInvite({ repo, token, userId: invitee.id, now: T0 + 100 }),
-      ).rejects.toBeInstanceOf(TokenExpiredError);
-    });
-
-    it('rejects unknown tokens', async () => {
-      const u = await seedUser('g@example.com');
-      await expect(
-        acceptInvite({ repo, token: 'never-issued', userId: u.id, now: T0 }),
-      ).rejects.toBeInstanceOf(InvalidTokenError);
+      expect(stillPending).toHaveLength(0);
     });
   });
 
   describe('listMyTeams + listMembers', () => {
-    it('listMyTeams returns the user’s team memberships', async () => {
+    it('listMyTeams returns the user\'s team memberships', async () => {
       const u = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: u.id, name: 'A', slug: 'a', now: T0 });
+      const team = await createTeam({ repo, actorId: u.id, name: 'A', now: T0 });
       const list = await listMyTeams({ repo, userId: u.id });
       expect(list).toHaveLength(1);
       expect(list[0]!.team.id).toBe(team.id);
-      expect(list[0]!.role).toBe('owner');
+      expect(list[0]!.role).toBe('admin');
     });
 
     it('listMembers returns members of the team', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'A', slug: 'a', now: T0 });
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'A', now: T0 });
       const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
+      await repo.addTeamMember(team.id, m.id, 'user', T0);
 
       const list = await listMembers({ repo, teamId: team.id });
       expect(list).toHaveLength(2);
     });
   });
 
-  describe('updateMemberRole', () => {
-    it('owner can promote a member to admin', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
-      const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
-
-      await updateMemberRole({
-        repo,
-        actorId: owner.id,
-        teamId: team.id,
-        userId: m.id,
-        role: 'admin',
-      });
-
-      const updated = await repo.getTeamMember(team.id, m.id);
-      expect(updated?.role).toBe('admin');
-    });
-
-    it('admin cannot change roles', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
-      const adminUser = await seedUser('a@example.com');
-      await repo.addTeamMember(team.id, adminUser.id, 'admin', T0);
-      const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
-
-      await expect(
-        updateMemberRole({
-          repo,
-          actorId: adminUser.id,
-          teamId: team.id,
-          userId: m.id,
-          role: 'admin',
-        }),
-      ).rejects.toBeInstanceOf(NotAuthorizedError);
-    });
-  });
-
   describe('removeMember', () => {
-    it('owner can remove a member', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
+    it('Admin can remove a User', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
       const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
+      await repo.addTeamMember(team.id, m.id, 'user', T0);
 
-      await removeMember({ repo, actorId: owner.id, teamId: team.id, userId: m.id });
+      await removeMember({ repo, actorId: admin.id, teamId: team.id, userId: m.id });
       expect(await repo.getTeamMember(team.id, m.id)).toBeNull();
     });
 
-    it('member can leave (self-remove)', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
+    it('User can leave (self-remove)', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
       const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
+      await repo.addTeamMember(team.id, m.id, 'user', T0);
 
       await removeMember({ repo, actorId: m.id, teamId: team.id, userId: m.id });
       expect(await repo.getTeamMember(team.id, m.id)).toBeNull();
     });
 
-    it('owner cannot self-remove (must transfer first)', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
+    it('Admin cannot self-remove (must transfer first)', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
       await expect(
-        removeMember({ repo, actorId: owner.id, teamId: team.id, userId: owner.id }),
+        removeMember({ repo, actorId: admin.id, teamId: team.id, userId: admin.id }),
       ).rejects.toBeInstanceOf(NotAuthorizedError);
     });
   });
 
-  describe('transferOwnership', () => {
-    it('promotes the new owner and demotes the old owner to admin', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
+  describe('transferAdmin', () => {
+    it('promotes the new admin and demotes the old admin to user', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
       const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
+      await repo.addTeamMember(team.id, m.id, 'user', T0);
 
-      await transferOwnership({
+      await transferAdmin({
         repo,
-        actorId: owner.id,
+        actorId: admin.id,
         teamId: team.id,
         toUserId: m.id,
       });
 
       const updated = await repo.getTeam(team.id);
-      expect(updated?.ownerId).toBe(m.id);
-      expect((await repo.getTeamMember(team.id, m.id))!.role).toBe('owner');
-      expect((await repo.getTeamMember(team.id, owner.id))!.role).toBe('admin');
+      expect(updated?.adminId).toBe(m.id);
+      expect((await repo.getTeamMember(team.id, m.id))!.role).toBe('admin');
+      expect((await repo.getTeamMember(team.id, admin.id))!.role).toBe('user');
     });
 
-    it('non-owner cannot transfer', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
+    it('non-Admin cannot transfer', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
       const m = await seedUser('m@example.com');
-      await repo.addTeamMember(team.id, m.id, 'member', T0);
+      await repo.addTeamMember(team.id, m.id, 'user', T0);
 
       await expect(
-        transferOwnership({ repo, actorId: m.id, teamId: team.id, toUserId: m.id }),
+        transferAdmin({ repo, actorId: m.id, teamId: team.id, toUserId: m.id }),
       ).rejects.toBeInstanceOf(NotAuthorizedError);
     });
   });
 
   describe('deleteTeam', () => {
-    it('owner can delete', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
-      await deleteTeam({ repo, actorId: owner.id, teamId: team.id });
+    it('Admin can delete', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
+      await deleteTeam({ repo, actorId: admin.id, teamId: team.id });
       expect(await repo.getTeam(team.id)).toBeNull();
     });
 
-    it('admin cannot delete', async () => {
-      const owner = await seedUser('o@example.com');
-      const team = await createTeam({ repo, actorId: owner.id, name: 'T', slug: 't', now: T0 });
-      const a = await seedUser('a@example.com');
-      await repo.addTeamMember(team.id, a.id, 'admin', T0);
+    it('Users cannot delete', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
+      const u = await seedUser('a@example.com');
+      await repo.addTeamMember(team.id, u.id, 'user', T0);
       await expect(
-        deleteTeam({ repo, actorId: a.id, teamId: team.id }),
+        deleteTeam({ repo, actorId: u.id, teamId: team.id }),
       ).rejects.toBeInstanceOf(NotAuthorizedError);
     });
 
     it('throws TeamNotFoundError on unknown team', async () => {
-      const owner = await seedUser('o@example.com');
+      const admin = await seedUser('o@example.com');
       await expect(
-        deleteTeam({ repo, actorId: owner.id, teamId: 'nope' }),
+        deleteTeam({ repo, actorId: admin.id, teamId: 'nope' }),
       ).rejects.toBeInstanceOf(TeamNotFoundError);
+    });
+  });
+
+  describe('editTeam', () => {
+    it('renames the team and recomputes initials', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'Old Name', now: T0 });
+      const updated = await editTeam({
+        repo,
+        actorId: admin.id,
+        teamId: team.id,
+        name: 'New Brand',
+      });
+      expect(updated.name).toBe('New Brand');
+      expect(updated.nameNormalized).toBe('new brand');
+      expect(updated.avatarInitials).toBe('NB');
+    });
+
+    it('rejects rename to an existing team\'s name', async () => {
+      const admin = await seedUser('o@example.com');
+      const a = await createTeam({ repo, actorId: admin.id, name: 'A', now: T0 });
+      const b = await createTeam({ repo, actorId: admin.id, name: 'B', now: T0 + 1 });
+      await expect(
+        editTeam({ repo, actorId: admin.id, teamId: b.id, name: 'A' }),
+      ).rejects.toBeInstanceOf(TeamNameTakenError);
+      void a;
+    });
+
+    it('Users cannot rename', async () => {
+      const admin = await seedUser('o@example.com');
+      const team = await createTeam({ repo, actorId: admin.id, name: 'T', now: T0 });
+      const u = await seedUser('u@example.com');
+      await repo.addTeamMember(team.id, u.id, 'user', T0);
+      await expect(
+        editTeam({ repo, actorId: u.id, teamId: team.id, name: 'Hacked' }),
+      ).rejects.toBeInstanceOf(NotAuthorizedError);
     });
   });
 });

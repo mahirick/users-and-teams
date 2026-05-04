@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../provider.js';
+import { Avatar } from './Avatar.js';
 
 export interface AccountMenuProps {
   /** Where to send anonymous visitors when they click "Sign in". Default: /login */
@@ -22,7 +23,6 @@ export function AccountMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Click-outside to close
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
@@ -43,7 +43,6 @@ export function AccountMenu({
   }
 
   const display = user.displayName ?? user.email;
-  const initial = (user.displayName ?? user.email).charAt(0).toUpperCase();
 
   return (
     <div className={cls('uat-account', className)} ref={ref}>
@@ -54,17 +53,31 @@ export function AccountMenu({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="uat-account__avatar" aria-hidden="true">
-          {initial}
-        </span>
+        <Avatar
+          initials={user.avatarInitials}
+          color={user.avatarColor}
+          size="md"
+          label={display}
+        />
         <span className="uat-account__name">{display}</span>
       </button>
 
       {open && (
         <div className="uat-account__menu" role="menu">
           <div className="uat-account__menu-header">
-            <p className="uat-account__menu-name">{display}</p>
-            <p className="uat-account__menu-email">{user.email}</p>
+            <Avatar
+              initials={user.avatarInitials}
+              color={user.avatarColor}
+              size="lg"
+              label={display}
+            />
+            <div>
+              <p className="uat-account__menu-name">{display}</p>
+              <p className="uat-account__menu-email">{user.email}</p>
+              {user.role === 'owner' && (
+                <p className="uat-account__menu-role">Owner</p>
+              )}
+            </div>
           </div>
 
           {extraItems}

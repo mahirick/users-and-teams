@@ -10,6 +10,7 @@ import {
   authPlugin,
   consoleTransport,
   createSqliteRepository,
+  resendTransport,
   runMigrations,
   teamsPlugin,
 } from '@mahirick/users-and-teams';
@@ -20,6 +21,14 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? 'admin@test.local')
   .split(',')
   .map((e) => e.trim())
   .filter(Boolean);
+
+const email =
+  process.env.RESEND_API_KEY && process.env.RESEND_FROM
+    ? resendTransport({
+        apiKey: process.env.RESEND_API_KEY,
+        from: process.env.RESEND_FROM,
+      })
+    : consoleTransport();
 
 const db = new Database('./backend/test.db');
 db.pragma('journal_mode = WAL');
@@ -35,10 +44,10 @@ await app.register(fastifyCors, {
 
 await app.register(authPlugin, {
   repository: createSqliteRepository(db),
-  email: consoleTransport(),
+  email,
   siteUrl: SITE_URL,
   siteName: 'UAT Test',
-  adminEmails: ADMIN_EMAILS,
+  ownerEmails: ADMIN_EMAILS,
   cookieName: 'uat_test_session',
   cookieSecure: false,
   verifySuccessRedirect: `${SITE_URL}/verify-result?status=success`,
@@ -47,7 +56,7 @@ await app.register(authPlugin, {
 
 await app.register(teamsPlugin, {
   repository: createSqliteRepository(db),
-  email: consoleTransport(),
+  email,
   siteUrl: SITE_URL,
   siteName: 'UAT Test',
 });

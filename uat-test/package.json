@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:backend": "tsx backend/server.ts",
+    "dev:backend": "tsx --env-file=backend/.env backend/server.ts",
     "dev:frontend": "vite --config frontend/vite.config.ts",
     "reset": "rm -f backend/test.db backend/test.db-* && echo 'db reset'",
     "update": "(cd .. && npm run build) && npm install --no-audit --no-fund"

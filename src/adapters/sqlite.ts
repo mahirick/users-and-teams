@@ -34,6 +34,8 @@ interface UserRow {
   display_name: string | null;
   role: string;
   status: string;
+  avatar_color: string;
+  avatar_initials: string;
   created_at: number;
   last_seen_at: number | null;
 }
@@ -59,8 +61,10 @@ interface MagicLinkRow {
 interface TeamRow {
   id: string;
   name: string;
-  slug: string;
-  owner_id: string;
+  name_normalized: string;
+  admin_id: string;
+  avatar_color: string;
+  avatar_initials: string;
   created_at: number;
 }
 
@@ -97,6 +101,8 @@ const userFromRow = (r: UserRow): User => ({
   displayName: r.display_name,
   role: r.role as User['role'],
   status: r.status as User['status'],
+  avatarColor: r.avatar_color,
+  avatarInitials: r.avatar_initials,
   createdAt: r.created_at,
   lastSeenAt: r.last_seen_at,
 });
@@ -122,8 +128,10 @@ const magicLinkFromRow = (r: MagicLinkRow): MagicLink => ({
 const teamFromRow = (r: TeamRow): Team => ({
   id: r.id,
   name: r.name,
-  slug: r.slug,
-  ownerId: r.owner_id,
+  nameNormalized: r.name_normalized,
+  adminId: r.admin_id,
+  avatarColor: r.avatar_color,
+  avatarInitials: r.avatar_initials,
   createdAt: r.created_at,
 });
 
@@ -163,9 +171,17 @@ export function createSqliteRepository(db: Sqlite): Repository {
     async createUser(input: CreateUserInput, now: number): Promise<User> {
       const id = uuidv7();
       db.prepare(
-        `INSERT INTO users (id, email, display_name, role, status, created_at, last_seen_at)
-         VALUES (?, ?, ?, ?, 'active', ?, NULL)`,
-      ).run(id, input.email, input.displayName ?? null, input.role ?? 'user', now);
+        `INSERT INTO users (id, email, display_name, role, status, avatar_color, avatar_initials, created_at, last_seen_at)
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, NULL)`,
+      ).run(
+        id,
+        input.email,
+        input.displayName ?? null,
+        input.role ?? 'user',
+        input.avatarColor ?? '#525252',
+        input.avatarInitials ?? '?',
+        now,
+      );
 
       const row = db.prepare<[string], UserRow>('SELECT * FROM users WHERE id = ?').get(id);
       return userFromRow(row!);
@@ -208,6 +224,14 @@ export function createSqliteRepository(db: Sqlite): Repository {
       if (patch.email !== undefined) {
         sets.push('email = ?');
         params.push(patch.email);
+      }
+      if (patch.avatarColor !== undefined) {
+        sets.push('avatar_color = ?');
+        params.push(patch.avatarColor);
+      }
+      if (patch.avatarInitials !== undefined) {
+        sets.push('avatar_initials = ?');
+        params.push(patch.avatarInitials);
       }
 
       if (sets.length > 0) {
@@ -329,9 +353,19 @@ export function createSqliteRepository(db: Sqlite): Repository {
 
     // ---- teams ----
     async createTeam(input: CreateTeamInput, now: number) {
+      const nameNormalized = input.nameNormalized ?? input.name.trim().toLowerCase();
       db.prepare(
-        `INSERT INTO teams (id, name, slug, owner_id, created_at) VALUES (?, ?, ?, ?, ?)`,
-      ).run(input.id, input.name, input.slug, input.ownerId, now);
+        `INSERT INTO teams (id, name, name_normalized, admin_id, avatar_color, avatar_initials, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        input.id,
+        input.name,
+        nameNormalized,
+        input.adminId,
+        input.avatarColor ?? '#525252',
+        input.avatarInitials ?? '?',
+        now,
+      );
       const row = db.prepare<[string], TeamRow>('SELECT * FROM teams WHERE id = ?').get(input.id);
       return teamFromRow(row!);
     },
@@ -341,10 +375,10 @@ export function createSqliteRepository(db: Sqlite): Repository {
       return row ? teamFromRow(row) : null;
     },
 
-    async findTeamBySlug(slug) {
+    async findTeamByNormalizedName(nameNormalized) {
       const row = db
-        .prepare<[string], TeamRow>('SELECT * FROM teams WHERE slug = ?')
-        .get(slug);
+        .prepare<[string], TeamRow>('SELECT * FROM teams WHERE name_normalized = ?')
+        .get(nameNormalized);
       return row ? teamFromRow(row) : null;
     },
 
@@ -355,13 +389,21 @@ export function createSqliteRepository(db: Sqlite): Repository {
         sets.push('name = ?');
         params.push(patch.name);
       }
-      if (patch.slug !== undefined) {
-        sets.push('slug = ?');
-        params.push(patch.slug);
+      if (patch.nameNormalized !== undefined) {
+        sets.push('name_normalized = ?');
+        params.push(patch.nameNormalized);
       }
-      if (patch.ownerId !== undefined) {
-        sets.push('owner_id = ?');
-        params.push(patch.ownerId);
+      if (patch.adminId !== undefined) {
+        sets.push('admin_id = ?');
+        params.push(patch.adminId);
+      }
+      if (patch.avatarColor !== undefined) {
+        sets.push('avatar_color = ?');
+        params.push(patch.avatarColor);
+      }
+      if (patch.avatarInitials !== undefined) {
+        sets.push('avatar_initials = ?');
+        params.push(patch.avatarInitials);
       }
       if (sets.length > 0) {
         params.push(id);
@@ -417,6 +459,8 @@ export function createSqliteRepository(db: Sqlite): Repository {
         display_name: string | null;
         u_role: string;
         status: string;
+        u_avatar_color: string;
+        u_avatar_initials: string;
         u_created_at: number;
         last_seen_at: number | null;
       }
@@ -424,7 +468,10 @@ export function createSqliteRepository(db: Sqlite): Repository {
         .prepare<[string], JoinedRow>(
           `SELECT tm.team_id, tm.user_id, tm.role, tm.joined_at,
                   u.id AS u_id, u.email, u.display_name, u.role AS u_role,
-                  u.status, u.created_at AS u_created_at, u.last_seen_at
+                  u.status,
+                  u.avatar_color    AS u_avatar_color,
+                  u.avatar_initials AS u_avatar_initials,
+                  u.created_at AS u_created_at, u.last_seen_at
              FROM team_members tm
              JOIN users u ON u.id = tm.user_id
             WHERE tm.team_id = ?
@@ -444,6 +491,8 @@ export function createSqliteRepository(db: Sqlite): Repository {
           displayName: r.display_name,
           role: r.u_role as User['role'],
           status: r.status as User['status'],
+          avatarColor: r.u_avatar_color,
+          avatarInitials: r.u_avatar_initials,
           createdAt: r.u_created_at,
           lastSeenAt: r.last_seen_at,
         },
@@ -506,6 +555,19 @@ export function createSqliteRepository(db: Sqlite): Repository {
           'SELECT * FROM team_invites WHERE team_id = ? ORDER BY created_at DESC',
         )
         .all(teamId);
+      return rows.map(inviteFromRow);
+    },
+
+    async findPendingInvitesForEmail(email, now) {
+      const rows = db
+        .prepare<[string, number], TeamInviteRow>(
+          `SELECT * FROM team_invites
+            WHERE email = ?
+              AND consumed_at IS NULL
+              AND expires_at >= ?
+            ORDER BY created_at ASC`,
+        )
+        .all(email, now);
       return rows.map(inviteFromRow);
     },
 

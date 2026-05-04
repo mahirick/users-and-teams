@@ -5,8 +5,16 @@ import { UsersAndTeamsProvider } from '../provider.js';
 import { useTeams } from './useTeams.js';
 
 interface TeamMembership {
-  team: { id: string; name: string; slug: string };
-  role: 'owner' | 'admin' | 'member';
+  team: {
+    id: string;
+    name: string;
+    nameNormalized: string;
+    adminId: string;
+    avatarColor: string;
+    avatarInitials: string;
+    createdAt: number;
+  };
+  role: 'admin' | 'user';
 }
 
 function makeFetchStub(handlers: Record<string, () => Response>): typeof fetch {
@@ -20,14 +28,33 @@ function makeFetchStub(handlers: Record<string, () => Response>): typeof fetch {
 
 const meHandler = () =>
   new Response(
-    JSON.stringify({ user: { id: 'u1', email: 'u@x.com', displayName: 'U', role: 'user' } }),
+    JSON.stringify({
+      user: {
+        id: 'u1',
+        email: 'u@x.com',
+        displayName: 'U',
+        role: 'user',
+        avatarColor: '#0EA5E9',
+        avatarInitials: 'U',
+      },
+    }),
     { status: 200 },
   );
+
+const teamFixture = (id: string, name: string): TeamMembership['team'] => ({
+  id,
+  name,
+  nameNormalized: name.toLowerCase(),
+  adminId: 'u1',
+  avatarColor: '#0EA5E9',
+  avatarInitials: name[0]!.toUpperCase(),
+  createdAt: 0,
+});
 
 describe('useTeams', () => {
   it('loads teams from /teams when user is signed in', async () => {
     const teams: TeamMembership[] = [
-      { team: { id: 't1', name: 'Eng', slug: 'eng' }, role: 'owner' },
+      { team: teamFixture('t1', 'Eng'), role: 'admin' },
     ];
     const fetchStub = makeFetchStub({
       '/auth/me': meHandler,
@@ -42,7 +69,7 @@ describe('useTeams', () => {
           <span data-testid="loading">{String(t.loading)}</span>
           <span data-testid="count">{t.teams.length}</span>
           {t.teams.map((m) => (
-            <span key={m.team.id} data-testid={`team-${m.team.slug}`}>
+            <span key={m.team.id} data-testid={`team-${m.team.id}`}>
               {m.team.name}/{m.role}
             </span>
           ))}
@@ -57,7 +84,7 @@ describe('useTeams', () => {
     );
 
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
-    expect(screen.getByTestId('team-eng').textContent).toBe('Eng/owner');
+    expect(screen.getByTestId('team-t1').textContent).toBe('Eng/admin');
   });
 
   it('createTeam POSTs to /teams and refreshes the list', async () => {
@@ -77,10 +104,8 @@ describe('useTeams', () => {
           <span data-testid="count">{t.teams.length}</span>
           <button
             onClick={async () => {
-              teamsResponseTeams = [
-                { team: { id: 't1', name: 'New', slug: 'new' }, role: 'owner' },
-              ];
-              await t.createTeam('New', 'new');
+              teamsResponseTeams = [{ team: teamFixture('t1', 'New'), role: 'admin' }];
+              await t.createTeam('New');
             }}
           >
             create
@@ -97,12 +122,11 @@ describe('useTeams', () => {
 
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
 
-    // Wire the POST /teams handler
     fetchAny.mockImplementation(async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url === '/teams' && init?.method === 'POST') {
         return new Response(
-          JSON.stringify({ team: { id: 't1', name: 'New', slug: 'new', ownerId: 'u1', createdAt: 0 } }),
+          JSON.stringify({ team: teamFixture('t1', 'New') }),
           { status: 201 },
         );
       }

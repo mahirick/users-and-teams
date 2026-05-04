@@ -27,7 +27,7 @@ async function makeApp(): Promise<Ctx> {
     siteName: 'App',
     cookieName: 'sess',
     rateLimit: false,
-    adminEmails: ['admin@example.com'],
+    ownerEmails: ['admin@example.com'],
   });
   await app.register(adminPlugin, { repository: repo });
   await app.ready();
@@ -138,13 +138,13 @@ describe('adminPlugin', () => {
     const patchRes = await ctx.app.inject({
       method: 'PATCH',
       url: `/admin/users/${target.id}`,
-      payload: { displayName: 'Renamed', role: 'admin' },
+      payload: { displayName: 'Renamed', role: 'owner' },
       headers: { cookie: `sess=${adminCookie}` },
     });
     expect(patchRes.statusCode).toBe(200);
     const body = patchRes.json() as { user: { displayName: string; role: string } };
     expect(body.user.displayName).toBe('Renamed');
-    expect(body.user.role).toBe('admin');
+    expect(body.user.role).toBe('owner');
   });
 
   it('admin sees audit entries for their own actions', async () => {

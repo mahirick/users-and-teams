@@ -213,9 +213,27 @@
 }
 
 .uat-account__menu-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 8px 10px 10px;
   border-bottom: 1px solid var(--uat-border-light);
   margin-bottom: 6px;
+}
+
+.uat-account__menu-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--uat-accent);
+  margin: 4px 0 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.uat-account__menu-item--row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .uat-account__menu-name {
@@ -314,4 +332,53 @@
   text-decoration: none;
   font-weight: 600;
   font-size: 14px;
+}
+
+/* ---------- Avatar ---------- */
+
+.uat-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: white;
+  font-family: var(--uat-font-primary);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.uat-avatar--sm {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.uat-avatar--md {
+  width: 40px;
+  height: 40px;
+  font-size: 15px;
+}
+
+.uat-avatar--lg {
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
+}
+
+/* ---------- Pill (role badges) ---------- */
+
+.uat-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  background: rgba(6, 182, 212, 0.12);
+  color: var(--uat-accent);
+  border: 1px solid rgba(6, 182, 212, 0.32);
 }

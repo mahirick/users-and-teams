@@ -1,4 +1,5 @@
-// Admin Fastify plugin. Routes are gated on request.user.role === 'admin'.
+// Admin Fastify plugin. Routes are gated on request.user.role === 'owner'
+// (system Owner — the cross-team superuser).
 
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
@@ -18,14 +19,14 @@ import {
 
 export interface AdminPluginOptions {
   repository: Repository;
-  /** Override the role check (default: requires user.role === 'admin'). */
+  /** Override the role check (default: requires user.role === 'owner'). */
   requireRole?: (user: User) => boolean;
 }
 
 const updateUserSchema = z
   .object({
     displayName: z.string().nullable().optional(),
-    role: z.enum(['user', 'admin']).optional(),
+    role: z.enum(['user', 'owner']).optional(),
     status: z.enum(['active', 'suspended', 'deleted']).optional(),
     email: z.string().email().optional(),
   })
@@ -35,16 +36,16 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
   fastify: FastifyInstance,
   options: AdminPluginOptions,
 ) => {
-  const requireRole = options.requireRole ?? ((u: User) => u.role === 'admin');
+  const requireRole = options.requireRole ?? ((u: User) => u.role === 'owner');
 
-  function requireAdminUser(req: FastifyRequest): User {
+  function requireOwnerUser(req: FastifyRequest): User {
     if (!req.user) {
       const err: Error & { statusCode?: number } = new Error('Authentication required');
       err.statusCode = 401;
       throw err;
     }
     if (!requireRole(req.user)) {
-      throw new NotAuthorizedError('Admin role required');
+      throw new NotAuthorizedError('Owner role required');
     }
     return req.user;
   }
@@ -54,7 +55,7 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- GET /admin/users ----
   fastify.get('/admin/users', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     const query = z
       .object({
         search: z.string().optional(),
@@ -73,13 +74,13 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- GET /admin/users/:id ----
   fastify.get<{ Params: { id: string } }>('/admin/users/:id', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     return getUserDetail({ repo: options.repository, actor, userId: req.params.id });
   });
 
   // ---- PATCH /admin/users/:id ----
   fastify.patch<{ Params: { id: string } }>('/admin/users/:id', async (req, reply) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) {
       reply.code(400);
@@ -100,7 +101,7 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- POST /admin/users/:id/suspend ----
   fastify.post<{ Params: { id: string } }>('/admin/users/:id/suspend', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     const user = await suspendUser({
       repo: options.repository,
       actor,
@@ -111,7 +112,7 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- POST /admin/users/:id/unsuspend ----
   fastify.post<{ Params: { id: string } }>('/admin/users/:id/unsuspend', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     const user = await unsuspendUser({
       repo: options.repository,
       actor,
@@ -122,7 +123,7 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- DELETE /admin/users/:id ----
   fastify.delete<{ Params: { id: string } }>('/admin/users/:id', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     await deleteUser({
       repo: options.repository,
       actor,
@@ -133,7 +134,7 @@ const adminPluginAsync: FastifyPluginAsync<AdminPluginOptions> = async (
 
   // ---- GET /admin/audit-log ----
   fastify.get('/admin/audit-log', async (req) => {
-    const actor = requireAdminUser(req);
+    const actor = requireOwnerUser(req);
     const query = z
       .object({
         action: z.string().optional(),

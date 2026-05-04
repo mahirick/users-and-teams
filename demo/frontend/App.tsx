@@ -12,7 +12,6 @@ import {
   TeamSwitcher,
   TeamMembersList,
   InviteForm,
-  AcceptInvite,
   AdminUsersTable,
   AuditLog,
   useTeams,
@@ -45,7 +44,6 @@ export function App() {
         {route === '/login' && <LoginPage />}
         {route === '/verify-result' && <VerifyResultPage />}
         {route === '/my-teams' && <TeamsPage />}
-        {route === '/invites/accept' && <AcceptInvitePage />}
         {route === '/admin-panel' && <AdminPage />}
         {route === '/admin-panel/audit' && <AuditPage />}
         {route === '/' && <Home navigate={navigate} />}
@@ -53,7 +51,6 @@ export function App() {
           route !== '/login' &&
           route !== '/verify-result' &&
           route !== '/my-teams' &&
-          route !== '/invites/accept' &&
           route !== '/admin-panel' &&
           route !== '/admin-panel/audit' && <Home navigate={navigate} />}
       </main>
@@ -89,7 +86,7 @@ function Header() {
         >
           Teams
         </a>
-        {user?.role === 'admin' && (
+        {user?.role === 'owner' && (
           <a
             href="/admin-panel"
             style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}
@@ -147,7 +144,7 @@ function TeamsPage() {
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <h1 style={{ margin: '0 0 4px', fontWeight: 600 }}>{active.team.name}</h1>
       <p style={{ margin: '0 0 24px', color: '#94a3b8', fontSize: 13 }}>
-        /{active.team.slug} · you are <strong>{active.role}</strong>
+        you are <strong>{active.role === 'admin' ? 'Admin' : 'User'}</strong>
       </p>
 
       <section style={{ marginBottom: 32 }}>
@@ -155,7 +152,7 @@ function TeamsPage() {
         <TeamMembersList teamId={active.team.id} />
       </section>
 
-      {(active.role === 'owner' || active.role === 'admin') && (
+      {active.role === 'admin' && (
         <section
           style={{
             background: '#14181b',
@@ -164,7 +161,7 @@ function TeamsPage() {
             padding: 16,
           }}
         >
-          <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Invite a teammate</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Add a member</h2>
           <InviteForm teamId={active.team.id} />
         </section>
       )}
@@ -172,29 +169,16 @@ function TeamsPage() {
   );
 }
 
-function AcceptInvitePage() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('token') ?? '';
-  if (!token) {
-    return (
-      <div style={{ textAlign: 'center', color: '#94a3b8' }}>
-        Missing invite token in URL.
-      </div>
-    );
-  }
-  return <AcceptInvite token={token} redirectTo="/my-teams" loginHref="/login" />;
-}
-
 function AdminPage() {
   const { user } = useAuth();
   if (!user) {
     return <p style={{ color: '#94a3b8' }}>Sign in.</p>;
   }
-  if (user.role !== 'admin') {
+  if (user.role !== 'owner') {
     return (
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
         <h1 style={{ marginBottom: 16, fontWeight: 600 }}>Admin</h1>
-        <p style={{ color: '#f87171' }}>You don't have admin role on this app.</p>
+        <p style={{ color: '#f87171' }}>You don't have Owner role on this app.</p>
       </div>
     );
   }

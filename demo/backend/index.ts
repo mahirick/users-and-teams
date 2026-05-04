@@ -45,7 +45,7 @@ const host = process.env.HOST ?? '127.0.0.1';
 const dbPath = process.env.DB_PATH ?? './demo/backend/demo.db';
 const siteUrl = process.env.SITE_URL ?? 'http://localhost:5173';
 const siteName = process.env.SITE_NAME ?? 'Demo App';
-const adminEmails = (process.env.ADMIN_EMAILS ?? '')
+const ownerEmails = (process.env.OWNER_EMAILS ?? process.env.ADMIN_EMAILS ?? '')
   .split(',')
   .map((e) => e.trim())
   .filter(Boolean);
@@ -84,7 +84,7 @@ await app.register(authPlugin, {
   email,
   siteUrl,
   siteName,
-  adminEmails,
+  ownerEmails,
   cookieName,
   cookieSecure: false, // dev only — flip to true in production
   // After verify, redirect back to the SPA's verify-result route
@@ -111,4 +111,4 @@ app.get('/api/hello', async (req) => ({
 await app.listen({ port, host });
 console.log(`Demo backend listening on http://${host}:${port}`);
 console.log(`Site URL: ${siteUrl}`);
-console.log(`Admin emails: ${adminEmails.length ? adminEmails.join(', ') : '(none)'}`);
+console.log(`Owner emails: ${ownerEmails.length ? ownerEmails.join(', ') : '(none)'}`);

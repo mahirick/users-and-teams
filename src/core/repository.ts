@@ -30,6 +30,10 @@ export interface CreateUserInput {
   email: string;          // already normalized lowercase
   role?: Role;            // default 'user'
   displayName?: string | null;
+  /** Optional — adapters fall back to a placeholder. Operations layer should
+   *  provide deterministic values (deriveInitials/pickColor); tests can omit. */
+  avatarColor?: string;
+  avatarInitials?: string;
 }
 
 export interface UpdateUserInput {
@@ -38,6 +42,8 @@ export interface UpdateUserInput {
   status?: UserStatus;
   lastSeenAt?: number | null;
   email?: string;
+  avatarColor?: string;
+  avatarInitials?: string;
 }
 
 export interface CreateMagicLinkInput {
@@ -57,14 +63,19 @@ export interface CreateSessionInput {
 export interface CreateTeamInput {
   id: string;
   name: string;
-  slug: string;
-  ownerId: string;
+  /** Defaults to lower(trim(name)). Operations should pass an explicit value. */
+  nameNormalized?: string;
+  adminId: string;
+  avatarColor?: string;
+  avatarInitials?: string;
 }
 
 export interface UpdateTeamInput {
   name?: string;
-  slug?: string;
-  ownerId?: string;       // for ownership transfer
+  nameNormalized?: string;
+  adminId?: string;       // for admin transfer
+  avatarColor?: string;
+  avatarInitials?: string;
 }
 
 export interface CreateTeamInviteInput {
@@ -112,10 +123,10 @@ export interface Repository {
   deleteSession(tokenHash: string): Promise<void>;
   deleteSessionsForUser(userId: string): Promise<number>;
 
-  // ---- teams (Stage 4) ----
+  // ---- teams ----
   createTeam(input: CreateTeamInput, now: number): Promise<Team>;
   getTeam(id: string): Promise<Team | null>;
-  findTeamBySlug(slug: string): Promise<Team | null>;
+  findTeamByNormalizedName(nameNormalized: string): Promise<Team | null>;
   updateTeam(id: string, patch: UpdateTeamInput): Promise<Team>;
   deleteTeam(id: string): Promise<void>;
   listTeamsForUser(userId: string): Promise<Array<{ team: Team; role: MemberRole }>>;
@@ -132,8 +143,10 @@ export interface Repository {
   findTeamInviteByHash(tokenHash: string): Promise<TeamInvite | null>;
   consumeTeamInvite(tokenHash: string, now: number): Promise<void>;
   listTeamInvites(teamId: string): Promise<TeamInvite[]>;
+  /** All un-consumed, un-expired invites for a given email (for auto-add at signup). */
+  findPendingInvitesForEmail(email: string, now: number): Promise<TeamInvite[]>;
 
-  // ---- audit (Stage 5) ----
+  // ---- audit ----
   createAuditEntry(input: CreateAuditEntryInput, now: number): Promise<AuditEntry>;
   listAuditEntries(filter: ListAuditFilter): Promise<AuditEntry[]>;
 }

@@ -1,8 +1,9 @@
-// TeamSwitcher: simple dropdown listing the current user's teams + a "Create
-// team" option. Hosts a small inline create-team form.
+// TeamSwitcher: dropdown listing the current user's teams + a "Create team"
+// option. Hosts a small inline create-team form (just a name field).
 
 import { useEffect, useRef, useState } from 'react';
 import { useTeams, type TeamMembership } from '../hooks/useTeams.js';
+import { Avatar } from './Avatar.js';
 
 export interface TeamSwitcherProps {
   /** Currently selected team id; selection is owned by the consumer. */
@@ -24,7 +25,6 @@ export function TeamSwitcher({
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -51,15 +51,25 @@ export function TeamSwitcher({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="uat-account__name">
-          {active ? active.team.name : 'Teams'}
-        </span>
+        {active ? (
+          <>
+            <Avatar
+              initials={active.team.avatarInitials}
+              color={active.team.avatarColor}
+              size="sm"
+              label={active.team.name}
+            />
+            <span className="uat-account__name">{active.team.name}</span>
+          </>
+        ) : (
+          <span className="uat-account__name">Teams</span>
+        )}
         <span aria-hidden="true" style={{ fontSize: 10, color: '#94a3b8' }}>▼</span>
       </button>
 
       {open && (
         <div className="uat-account__menu" role="menu">
-          {teams.length === 0 && !creating && (
+          {teams.length === 0 && !creating && !loading && (
             <p className="uat-account__menu-email" style={{ padding: '8px 10px' }}>
               You're not in any teams yet.
             </p>
@@ -69,13 +79,22 @@ export function TeamSwitcher({
             <button
               key={m.team.id}
               type="button"
-              className="uat-account__menu-item"
+              className="uat-account__menu-item uat-account__menu-item--row"
               onClick={() => {
                 setOpen(false);
                 onSelect?.(m);
               }}
             >
-              {m.team.name} <span style={{ color: '#94a3b8' }}>({m.role})</span>
+              <Avatar
+                initials={m.team.avatarInitials}
+                color={m.team.avatarColor}
+                size="sm"
+                label={m.team.name}
+              />
+              <span>{m.team.name}</span>
+              {m.role === 'admin' && (
+                <span className="uat-pill" aria-label="You are the team admin">Admin</span>
+              )}
             </button>
           ))}
 
@@ -97,21 +116,20 @@ export function TeamSwitcher({
               onSubmit={async (e) => {
                 e.preventDefault();
                 setError(null);
-                const result = await createTeam(name, slug);
+                const result = await createTeam(name);
                 if (result.ok && result.team) {
                   setName('');
-                  setSlug('');
                   setCreating(false);
                   setOpen(false);
                   const newMembership: TeamMembership = {
                     team: result.team,
-                    role: 'owner',
+                    role: 'admin',
                   };
                   (onCreate ?? onSelect)?.(newMembership);
                 } else {
                   setError(
-                    result.error === 'slug_taken'
-                      ? 'That slug is already taken.'
+                    result.error === 'name_taken'
+                      ? 'That team name is already taken.'
                       : 'Could not create team.',
                   );
                 }
@@ -132,14 +150,6 @@ export function TeamSwitcher({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 aria-label="Team name"
-                required
-              />
-              <input
-                className="uat-login__input"
-                placeholder="slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                aria-label="Team slug"
                 required
               />
               <button className="uat-login__button" type="submit">

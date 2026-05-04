@@ -37,12 +37,12 @@ describe('verifyMagicLinkAndCreateSession', () => {
     return token;
   }
 
-  it('creates a new user with role=user when email is not in adminEmails', async () => {
+  it('creates a new user with role=user when email is not in ownerEmails', async () => {
     const token = await seedLink('newbie@example.com');
     const result = await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: ['admin@example.com'],
+      ownerEmails: ['admin@example.com'],
       sessionTtlDays: TTL_DAYS,
       now: T0 + 1000,
     });
@@ -52,17 +52,17 @@ describe('verifyMagicLinkAndCreateSession', () => {
     expect(result.sessionToken).toBeTruthy();
   });
 
-  it('creates a new user with role=admin when email is in adminEmails', async () => {
-    const token = await seedLink('admin@example.com');
+  it('creates a new user with role=owner when email is in ownerEmails', async () => {
+    const token = await seedLink('owner@example.com');
     const result = await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: ['ADMIN@example.com'], // case-insensitive match
+      ownerEmails: ['OWNER@example.com'], // case-insensitive match
       sessionTtlDays: TTL_DAYS,
       now: T0 + 1000,
     });
 
-    expect(result.user.role).toBe('admin');
+    expect(result.user.role).toBe('owner');
   });
 
   it('loads an existing user if the email already has an account', async () => {
@@ -75,7 +75,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
     const result = await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: [],
+      ownerEmails: [],
       sessionTtlDays: TTL_DAYS,
       now: T0 + 1000,
     });
@@ -89,7 +89,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
     await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: [],
+      ownerEmails: [],
       sessionTtlDays: TTL_DAYS,
       now: T0 + 1000,
     });
@@ -102,7 +102,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
     const result = await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: [],
+      ownerEmails: [],
       sessionTtlDays: 90,
       now: T0,
     });
@@ -116,7 +116,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
       verifyMagicLinkAndCreateSession({
         repo,
         token: 'never-issued',
-        adminEmails: [],
+        ownerEmails: [],
         sessionTtlDays: TTL_DAYS,
         now: T0,
       }),
@@ -128,7 +128,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
     await verifyMagicLinkAndCreateSession({
       repo,
       token,
-      adminEmails: [],
+      ownerEmails: [],
       sessionTtlDays: TTL_DAYS,
       now: T0,
     });
@@ -136,7 +136,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
       verifyMagicLinkAndCreateSession({
         repo,
         token,
-        adminEmails: [],
+        ownerEmails: [],
         sessionTtlDays: TTL_DAYS,
         now: T0 + 1000,
       }),
@@ -149,7 +149,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
       verifyMagicLinkAndCreateSession({
         repo,
         token,
-        adminEmails: [],
+        ownerEmails: [],
         sessionTtlDays: TTL_DAYS,
         now: T0 + 100,
       }),
@@ -165,7 +165,7 @@ describe('verifyMagicLinkAndCreateSession', () => {
       verifyMagicLinkAndCreateSession({
         repo,
         token,
-        adminEmails: [],
+        ownerEmails: [],
         sessionTtlDays: TTL_DAYS,
         now: T0 + 1000,
       }),

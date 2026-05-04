@@ -1,9 +1,9 @@
 // Core domain types. Pure data shapes, no behavior.
 // These are the wire format for all package-internal operations.
 
-export type Role = 'user' | 'admin';
+export type Role = 'user' | 'owner';
 export type UserStatus = 'active' | 'suspended' | 'deleted';
-export type MemberRole = 'owner' | 'admin' | 'member';
+export type MemberRole = 'admin' | 'user';
 
 export interface User {
   id: string;            // UUID v7 (sortable by creation time)
@@ -11,6 +11,8 @@ export interface User {
   displayName: string | null;
   role: Role;
   status: UserStatus;
+  avatarColor: string;   // hex like "#34C759", deterministic from id
+  avatarInitials: string; // up to 2 uppercase ASCII chars, "?" fallback
   createdAt: number;     // epoch ms
   lastSeenAt: number | null;
 }
@@ -36,8 +38,10 @@ export interface MagicLink {
 export interface Team {
   id: string;
   name: string;
-  slug: string;
-  ownerId: string;
+  nameNormalized: string; // lower(collapse_ws(trim(name))) — uniqueness key
+  adminId: string;        // user id of the team's Admin (one per team)
+  avatarColor: string;
+  avatarInitials: string;
   createdAt: number;
 }
 

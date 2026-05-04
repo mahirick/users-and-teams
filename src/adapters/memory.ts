@@ -2,7 +2,6 @@
 // implementation. Not suitable for production — no persistence, no concurrency
 // guarantees, no indexes beyond Map lookups.
 
-import { uuidv7 } from 'uuidv7';
 import type {
   AuditEntry,
   MagicLink,
@@ -26,6 +25,7 @@ import type {
   UpdateTeamInput,
   UpdateUserInput,
 } from '../core/repository.js';
+import { uuidv7 } from 'uuidv7';
 
 export function createMemoryRepository(): Repository {
   const users = new Map<string, User>();
@@ -33,7 +33,7 @@ export function createMemoryRepository(): Repository {
   const magicLinks = new Map<string, MagicLink>();
   const sessions = new Map<string, Session>();
   const teams = new Map<string, Team>();
-  const teamsBySlug = new Map<string, string>();
+  const teamsByNormalizedName = new Map<string, string>();
   const members = new Map<string, TeamMember>(); // key: `${teamId}::${userId}`
   const invites = new Map<string, TeamInvite>();
   const audit: AuditEntry[] = [];
@@ -50,6 +50,8 @@ export function createMemoryRepository(): Repository {
         displayName: input.displayName ?? null,
         role: input.role ?? 'user',
         status: 'active',
+        avatarColor: input.avatarColor ?? '#525252',
+        avatarInitials: input.avatarInitials ?? '?',
         createdAt: now,
         lastSeenAt: null,
       };
@@ -82,6 +84,8 @@ export function createMemoryRepository(): Repository {
         ...(patch.status !== undefined ? { status: patch.status } : {}),
         ...(patch.lastSeenAt !== undefined ? { lastSeenAt: patch.lastSeenAt } : {}),
         ...(patch.email !== undefined ? { email: patch.email } : {}),
+        ...(patch.avatarColor !== undefined ? { avatarColor: patch.avatarColor } : {}),
+        ...(patch.avatarInitials !== undefined ? { avatarInitials: patch.avatarInitials } : {}),
       };
       users.set(id, updated);
       return { ...updated };
@@ -196,18 +200,21 @@ export function createMemoryRepository(): Repository {
 
     // ---- teams ----
     async createTeam(input: CreateTeamInput, now: number): Promise<Team> {
-      if (teamsBySlug.has(input.slug)) {
-        throw new Error(`Team slug ${input.slug} taken`);
+      const nameNormalized = input.nameNormalized ?? input.name.trim().toLowerCase();
+      if (teamsByNormalizedName.has(nameNormalized)) {
+        throw new Error(`Team name ${nameNormalized} taken`);
       }
       const team: Team = {
         id: input.id,
         name: input.name,
-        slug: input.slug,
-        ownerId: input.ownerId,
+        nameNormalized,
+        adminId: input.adminId,
+        avatarColor: input.avatarColor ?? '#525252',
+        avatarInitials: input.avatarInitials ?? '?',
         createdAt: now,
       };
       teams.set(team.id, team);
-      teamsBySlug.set(team.slug, team.id);
+      teamsByNormalizedName.set(team.nameNormalized, team.id);
       return { ...team };
     },
 
@@ -216,24 +223,28 @@ export function createMemoryRepository(): Repository {
       return t ? { ...t } : null;
     },
 
-    async findTeamBySlug(slug: string): Promise<Team | null> {
-      const id = teamsBySlug.get(slug);
+    async findTeamByNormalizedName(nameNormalized: string): Promise<Team | null> {
+      const id = teamsByNormalizedName.get(nameNormalized);
       return id ? { ...teams.get(id)! } : null;
     },
 
     async updateTeam(id: string, patch: UpdateTeamInput): Promise<Team> {
       const t = teams.get(id);
       if (!t) throw new Error(`Team ${id} not found`);
-      if (patch.slug && patch.slug !== t.slug) {
-        if (teamsBySlug.has(patch.slug)) throw new Error(`Slug ${patch.slug} taken`);
-        teamsBySlug.delete(t.slug);
-        teamsBySlug.set(patch.slug, id);
+      if (patch.nameNormalized && patch.nameNormalized !== t.nameNormalized) {
+        if (teamsByNormalizedName.has(patch.nameNormalized)) {
+          throw new Error(`Team name ${patch.nameNormalized} taken`);
+        }
+        teamsByNormalizedName.delete(t.nameNormalized);
+        teamsByNormalizedName.set(patch.nameNormalized, id);
       }
       const updated: Team = {
         ...t,
         ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.slug !== undefined ? { slug: patch.slug } : {}),
-        ...(patch.ownerId !== undefined ? { ownerId: patch.ownerId } : {}),
+        ...(patch.nameNormalized !== undefined ? { nameNormalized: patch.nameNormalized } : {}),
+        ...(patch.adminId !== undefined ? { adminId: patch.adminId } : {}),
+        ...(patch.avatarColor !== undefined ? { avatarColor: patch.avatarColor } : {}),
+        ...(patch.avatarInitials !== undefined ? { avatarInitials: patch.avatarInitials } : {}),
       };
       teams.set(id, updated);
       return { ...updated };
@@ -243,7 +254,7 @@ export function createMemoryRepository(): Repository {
       const t = teams.get(id);
       if (!t) return;
       teams.delete(id);
-      teamsBySlug.delete(t.slug);
+      teamsByNormalizedName.delete(t.nameNormalized);
       for (const [key, m] of members) {
         if (m.teamId === id) members.delete(key);
       }
@@ -327,6 +338,13 @@ export function createMemoryRepository(): Repository {
     async listTeamInvites(teamId): Promise<TeamInvite[]> {
       return Array.from(invites.values())
         .filter((i) => i.teamId === teamId)
+        .map((i) => ({ ...i }));
+    },
+
+    async findPendingInvitesForEmail(email, now): Promise<TeamInvite[]> {
+      return Array.from(invites.values())
+        .filter((i) => i.email === email && i.consumedAt === null && i.expiresAt >= now)
+        .sort((a, b) => a.createdAt - b.createdAt)
         .map((i) => ({ ...i }));
     },
 

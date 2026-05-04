@@ -46,7 +46,11 @@ export interface AuthPluginOptions {
   email: EmailTransport;
   siteUrl: string;
   siteName: string;
-  adminEmails?: string[];
+  /**
+   * Emails granted system-level Owner role on first sign-in. An Owner can do
+   * anything anywhere (cross-team admin, user moderation, audit log access).
+   */
+  ownerEmails?: string[];
   cookieName?: string;
   cookieDomain?: string;
   /** Override for tests. Defaults to true in production (set per NODE_ENV). */
@@ -88,7 +92,7 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
   const cookieSameSite = options.cookieSameSite ?? 'lax';
   const sessionTtlDays = options.sessionTtlDays ?? 90;
   const magicLinkTtlMin = options.magicLinkTtlMin ?? 15;
-  const adminEmails = options.adminEmails ?? [];
+  const ownerEmails = options.ownerEmails ?? [];
 
   // Rate limiter: pass `false` to disable; otherwise build from config.
   const limiter: RateLimiter | undefined =
@@ -196,7 +200,7 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
       const result = await verifyMagicLinkAndCreateSession({
         repo: options.repository,
         token: parsed.data.token,
-        adminEmails,
+        ownerEmails,
         sessionTtlDays,
         ip: req.ip,
         userAgent: req.headers['user-agent'] ?? null,
@@ -263,6 +267,8 @@ const authPluginAsync: FastifyPluginAsync<AuthPluginOptions> = async (
         email: req.user.email,
         displayName: req.user.displayName,
         role: req.user.role,
+        avatarColor: req.user.avatarColor,
+        avatarInitials: req.user.avatarInitials,
       },
     };
   });

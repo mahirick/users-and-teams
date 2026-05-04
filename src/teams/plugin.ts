@@ -6,18 +6,17 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastif
 import fp from 'fastify-plugin';
 import { z } from 'zod';
 import type { Repository } from '../core/repository.js';
-import type { EmailTransport, RenderedEmail } from '../email/types.js';
+import type { EmailTransport } from '../email/types.js';
+import { addedToTeamEmail, signupAddedToTeamEmail } from '../email/templates.js';
 import {
-  acceptInvite,
+  addMember,
   createTeam,
   deleteTeam,
   editTeam,
-  inviteMember,
   listMembers,
   listMyTeams,
   removeMember,
-  transferOwnership,
-  updateMemberRole,
+  transferAdmin,
 } from './operations.js';
 
 export interface TeamsPluginOptions {
@@ -26,35 +25,22 @@ export interface TeamsPluginOptions {
   siteUrl: string;
   siteName: string;
   inviteTtlDays?: number;
-  inviteTemplate?: (args: {
-    siteName: string;
-    siteUrl: string;
-    teamName: string;
-    inviterName: string | null;
-    inviterEmail?: string;
-    link: string;
-  }) => RenderedEmail;
-  /** Where to redirect after a successful invite acceptance. Default: `${siteUrl}/`. */
-  acceptSuccessRedirect?: string;
+  /** Override the "you were added to a team" email (existing user). */
+  addedTemplate?: typeof addedToTeamEmail;
+  /** Override the "you were added — sign up to see it" email (unknown email). */
+  signupAddedTemplate?: typeof signupAddedToTeamEmail;
 }
 
 const createTeamSchema = z.object({
   name: z.string().min(1).max(120),
-  slug: z.string().min(1).max(64),
 });
 
 const updateTeamSchema = z.object({
-  name: z.string().min(1).max(120).optional(),
-  slug: z.string().min(1).max(64).optional(),
+  name: z.string().min(1).max(120),
 });
 
-const inviteSchema = z.object({
+const addMemberSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['member', 'admin']),
-});
-
-const updateMemberRoleSchema = z.object({
-  role: z.enum(['member', 'admin']),
 });
 
 const transferSchema = z.object({
@@ -76,9 +62,6 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
     return req.user;
   }
 
-  // Error handling lives on authPlugin (shared mapUatError); declared as a
-  // dependency below so it always runs first. We re-throw and let it map.
-
   // ---- GET /teams (mine) ----
   fastify.get('/teams', async (req) => {
     const user = requireUser(req);
@@ -98,7 +81,6 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
       repo: options.repository,
       actorId: user.id,
       name: parsed.data.name,
-      slug: parsed.data.slug,
     });
     reply.code(201);
     return { team };
@@ -113,7 +95,7 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
       return { error: 'TEAM_NOT_FOUND' };
     }
     const membership = await options.repository.getTeamMember(team.id, user.id);
-    if (!membership && user.role !== 'admin') {
+    if (!membership && user.role !== 'owner') {
       reply.code(403);
       return { error: 'NOT_AUTHORIZED' };
     }
@@ -129,14 +111,12 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
       reply.code(400);
       return { error: 'invalid_payload', issues: parsed.error.issues };
     }
-    const patchInput: Parameters<typeof editTeam>[0] = {
+    const team = await editTeam({
       repo: options.repository,
       actorId: user.id,
       teamId: req.params.id,
-    };
-    if (parsed.data.name !== undefined) patchInput.name = parsed.data.name;
-    if (parsed.data.slug !== undefined) patchInput.slug = parsed.data.slug;
-    const team = await editTeam(patchInput);
+      name: parsed.data.name,
+    });
     return { team };
   });
 
@@ -151,45 +131,28 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
     return { ok: true };
   });
 
-  // ---- POST /teams/:id/invites ----
-  fastify.post<{ Params: { id: string } }>('/teams/:id/invites', async (req, reply) => {
+  // ---- POST /teams/:id/members ----
+  fastify.post<{ Params: { id: string } }>('/teams/:id/members', async (req, reply) => {
     const user = requireUser(req);
-    const parsed = inviteSchema.safeParse(req.body);
+    const parsed = addMemberSchema.safeParse(req.body);
     if (!parsed.success) {
       reply.code(400);
       return { error: 'invalid_payload', issues: parsed.error.issues };
     }
-    const inviteInput: Parameters<typeof inviteMember>[0] = {
+    const result = await addMember({
       repo: options.repository,
       actorId: user.id,
       teamId: req.params.id,
       email: parsed.data.email,
-      role: parsed.data.role,
       transport: options.email,
       siteName: options.siteName,
       siteUrl: options.siteUrl,
       inviteTtlDays,
-    };
-    if (options.inviteTemplate) inviteInput.template = options.inviteTemplate;
-    const result = await inviteMember(inviteInput);
+      ...(options.addedTemplate ? { addedTemplate: options.addedTemplate } : {}),
+      ...(options.signupAddedTemplate ? { signupAddedTemplate: options.signupAddedTemplate } : {}),
+    });
     reply.code(201);
     return result;
-  });
-
-  // ---- GET /teams/invites/accept ----
-  fastify.get('/teams/invites/accept', async (req, reply) => {
-    const user = requireUser(req);
-    const query = z.object({ token: z.string().min(1) }).safeParse(req.query);
-    if (!query.success) {
-      reply.code(400);
-      return { error: 'invalid_token' };
-    }
-    const member = await acceptInvite({
-      repo: options.repository,
-      token: query.data.token,
-      userId: user.id,
-    });
-    return { ok: true, member };
   });
 
   // ---- DELETE /teams/:id/members/:userId ----
@@ -207,30 +170,9 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
     },
   );
 
-  // ---- PATCH /teams/:id/members/:userId ----
-  fastify.patch<{ Params: { id: string; userId: string } }>(
-    '/teams/:id/members/:userId',
-    async (req, reply) => {
-      const user = requireUser(req);
-      const parsed = updateMemberRoleSchema.safeParse(req.body);
-      if (!parsed.success) {
-        reply.code(400);
-        return { error: 'invalid_payload', issues: parsed.error.issues };
-      }
-      const member = await updateMemberRole({
-        repo: options.repository,
-        actorId: user.id,
-        teamId: req.params.id,
-        userId: req.params.userId,
-        role: parsed.data.role,
-      });
-      return { member };
-    },
-  );
-
-  // ---- POST /teams/:id/transfer-ownership ----
+  // ---- POST /teams/:id/transfer-admin ----
   fastify.post<{ Params: { id: string } }>(
-    '/teams/:id/transfer-ownership',
+    '/teams/:id/transfer-admin',
     async (req, reply) => {
       const user = requireUser(req);
       const parsed = transferSchema.safeParse(req.body);
@@ -238,7 +180,7 @@ const teamsPluginAsync: FastifyPluginAsync<TeamsPluginOptions> = async (
         reply.code(400);
         return { error: 'invalid_payload', issues: parsed.error.issues };
       }
-      await transferOwnership({
+      await transferAdmin({
         repo: options.repository,
         actorId: user.id,
         teamId: req.params.id,

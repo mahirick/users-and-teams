@@ -3,9 +3,10 @@
 A reusable npm package for self-hosted user accounts and team management. Drops into any Fastify backend with a few lines of config.
 
 - 🔐 **Magic-link auth** — email-based, opaque session tokens in HttpOnly cookies, no passwords, no JWT.
-- 👥 **Teams** — create, invite by email, role-based membership (owner / admin / member).
-- 🛡️ **Admin** — list / suspend / delete users, full audit log of significant actions.
-- 🎨 **React UI** — drop-in components (`<LoginForm>`, `<AccountMenu>`, `<TeamSwitcher>`, `<AdminUsersTable>`, …) themed via CSS variables.
+- 👥 **Teams** — anyone can create one; the creator is the team **Admin**, everyone else is a **User**. Add by email — existing users join immediately, unknown emails get a magic-link signup that auto-adds them on first login (iMessage-style).
+- 🛡️ **Owner role** — system-wide superuser with cross-team admin powers, user moderation, and a full audit log.
+- 🖼 **Avatars** — Apple-style initials-on-color circles, deterministically derived from id and name. No upload, no binary storage.
+- 🎨 **React UI** — drop-in components (`<LoginForm>`, `<AccountMenu>`, `<TeamSwitcher>`, `<TeamMembersList>`, `<Avatar>`, `<AdminUsersTable>`, …) themed via CSS variables.
 - 🗄️ **Pluggable storage** — SQLite (`better-sqlite3`) and in-memory adapters; Postgres planned.
 - 📨 **Pluggable email** — Console (dev) and Resend (prod) transports; SMTP planned.
 
@@ -58,9 +59,10 @@ Frontend side mirrors this:
   <LoginForm />            → POST /auth/request-link
   <AccountMenu />          → GET /auth/me, POST /auth/logout(-all)
   <TeamSwitcher />         → GET /teams, POST /teams
-  <TeamMembersList />      → GET /teams/:id, PATCH/DELETE /teams/:id/members/:userId
-  <InviteForm />           → POST /teams/:id/invites
-  <AcceptInvite />         → GET /teams/invites/accept
+  <TeamMembersList />      → GET /teams/:id, DELETE /teams/:id/members/:userId,
+                             POST /teams/:id/transfer-admin
+  <InviteForm />           → POST /teams/:id/members  (auto-add by email)
+  <Avatar />               → presentational; takes initials + color
   <AdminUsersTable />      → GET/PATCH /admin/users[…], POST /admin/users/:id/suspend
   <AuditLog />             → GET /admin/audit-log
   <VerifyResult />         (no API call — landing page after backend redirect)
@@ -113,7 +115,7 @@ await app.register(authPlugin, {
   siteName: 'Your App',
   cookieName: 'app_session',
   sessionTtlDays: 90,
-  adminEmails: (process.env.ADMIN_EMAILS ?? '').split(',').filter(Boolean),
+  ownerEmails: (process.env.OWNER_EMAILS ?? '').split(',').filter(Boolean),
 });
 
 await app.register(teamsPlugin, { repository, email, siteUrl: 'https://yourapp.com', siteName: 'Your App' });
@@ -202,17 +204,15 @@ All routes auto-mounted by the plugins:
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/teams` | mine |
-| POST | `/teams` | `{ name, slug }` |
+| POST | `/teams` | `{ name }` (creator becomes Admin) |
 | GET | `/teams/:id` | members + your role |
-| PATCH | `/teams/:id` | name, slug |
-| DELETE | `/teams/:id` | owner only |
-| POST | `/teams/:id/invites` | `{ email, role }` |
-| GET | `/teams/invites/accept` | `?token=…` |
-| PATCH | `/teams/:id/members/:userId` | `{ role }` (owner only) |
-| DELETE | `/teams/:id/members/:userId` | owner / admin / self |
-| POST | `/teams/:id/transfer-ownership` | `{ toUserId }` |
+| PATCH | `/teams/:id` | `{ name }` (Admin only) |
+| DELETE | `/teams/:id` | Admin only |
+| POST | `/teams/:id/members` | `{ email }` — adds existing user immediately, or sends magic-link signup for unknown emails |
+| DELETE | `/teams/:id/members/:userId` | Admin removes anyone except themselves; User can self-leave |
+| POST | `/teams/:id/transfer-admin` | `{ toUserId }` (Admin only) |
 
-**admin/** (require `user.role === 'admin'`)
+**admin/** (require `user.role === 'owner'`)
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/admin/users` | search, page, pageSize |
@@ -270,7 +270,7 @@ npm run dev:frontend     # Vite + React on :5273
 npm run update           # rebuilds the package + reinstalls
 ```
 
-Sign in with `admin@test.local` to see the Admin tab.
+Set `OWNER_EMAILS` (comma-separated) in `uat-test/backend/.env` and sign in with one of those emails to see the Admin tab.
 
 ## Customizing error handling
 

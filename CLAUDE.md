@@ -8,7 +8,27 @@ If a rule here conflicts with what the user explicitly asks, follow the user.
 
 `@mahirick/users-and-teams` — a self-hosted user / auth / teams / admin package designed to drop into any Fastify backend with a few lines of config. Magic-link auth + opaque sessions + role-based teams + admin audit log + optional React UI. Pluggable storage (SQLite + memory; Postgres planned) and email (console + Resend; SMTP planned).
 
-It is **not** a service. It is a **library** consumed by other projects. Treat the public API surface (exports from `src/index.ts` and `src/react.ts`, plus BEM class names in `styles.css`) as semver-stable from `v1.0.0`.
+It is **not** a service. It is a **library** consumed by other projects. Treat the public API surface (exports from `src/index.ts` and `src/react.ts`, plus BEM class names in `styles.css`) as semver-stable. Currently at **v2.0.0** — the v1→v2 break introduced auto-add team membership, dropped slugs, and renamed roles to Owner/Admin/User (see `docs/superpowers/specs/2026-05-04-team-self-service-and-avatars-design.md`).
+
+## Roles (v2)
+
+Three names, two scopes:
+
+| Name | Scope | Field |
+|---|---|---|
+| **Owner** | System-wide | `User.role = 'owner'`. Cross-team superuser. |
+| **Admin** | Per team | `TeamMember.role = 'admin'` and `Team.adminId`. Exactly one per team. |
+| **User** | Default everywhere | `User.role = 'user'`, `TeamMember.role = 'user'`. |
+
+System Owners bypass team-permission checks. Each team has exactly one Admin (transferable via `transferAdmin`).
+
+## Membership flow (auto-add)
+
+There is no accept/reject. `POST /teams/:id/members` with an email:
+- Existing user → `addTeamMember` immediately + notification email (`addedToTeamEmail`).
+- Unknown email → row in `team_invites` (now used as a pending-membership marker) + magic-link signup email (`signupAddedToTeamEmail`). On the user's first auth, `consumePendingInvitesForUser` (called from `auth/session.ts`) materializes the membership.
+
+"Reject" is "leave" — same code path. Admins must `transferAdmin` before leaving.
 
 ## Repo layout
 
@@ -21,7 +41,8 @@ src/
 │   ├── repository.ts         # storage interface (no implementation)
 │   ├── errors.ts             # typed error classes
 │   ├── error-handler.ts      # shared mapUatError() (see "Error handling")
-│   └── audit.ts              # recordAudit + AUDIT_ACTIONS taxonomy
+│   ├── audit.ts              # recordAudit + AUDIT_ACTIONS taxonomy
+│   └── avatar.ts             # deriveInitials, pickColor, normalizeTeamName
 ├── adapters/
 │   ├── memory.ts             # in-memory Repository (tests, references)
 │   ├── sqlite.ts             # better-sqlite3 Repository
@@ -33,8 +54,8 @@ src/
 │   ├── rate-limit.ts         # in-memory token bucket
 │   └── plugin.ts             # Fastify plugin: /auth/* + onRequest hook + setErrorHandler
 ├── teams/
-│   ├── permissions.ts        # canEditTeam, canInvite, … (pure predicates)
-│   ├── operations.ts         # createTeam, inviteMember, accept, transfer, …
+│   ├── permissions.ts        # canEditTeam, canAddMember, canRemoveMember, canTransferAdmin
+│   ├── operations.ts         # createTeam, addMember, transferAdmin, deleteTeam, editTeam, …
 │   └── plugin.ts             # Fastify plugin: /teams/*
 ├── admin/
 │   ├── operations.ts         # listUsers, suspend, delete, audit log
@@ -48,6 +69,7 @@ src/
 │   ├── 001_initial.ts        # users, magic_links, sessions
 │   ├── 002_teams.ts          # teams, team_members, team_invites
 │   ├── 003_audit.ts          # audit_log
+│   ├── 004_membership_v2.ts  # role rename, drop slug, add avatar cols, name_normalized
 │   ├── index.ts              # ordered migration list
 │   └── runner.ts             # _uat_migrations tracker; idempotent
 ├── ui/
@@ -57,13 +79,13 @@ src/
 │   ├── hooks/
 │   │   └── useTeams.ts       # team list + create
 │   └── components/
+│       ├── Avatar.tsx
 │       ├── LoginForm.tsx
 │       ├── AccountMenu.tsx
 │       ├── VerifyResult.tsx
 │       ├── TeamSwitcher.tsx
 │       ├── TeamMembersList.tsx
 │       ├── InviteForm.tsx
-│       ├── AcceptInvite.tsx
 │       ├── AdminUsersTable.tsx
 │       └── AuditLog.tsx
 
@@ -260,21 +282,22 @@ Subject line: stage / feature, ≤ 70 chars. Body: bulleted summary of what ship
 - **Don't store raw tokens.** `hashToken(t)` before storing. Always.
 - **Don't use class-based React components.** Function components + hooks only.
 - **Don't add a CSS framework.** The 16-token `--uat-*` system is the design system.
-- **Don't add backward-compat shims.** This package is at v1.0.0 — break versions, don't accumulate cruft.
+- **Don't add backward-compat shims.** Break versions, don't accumulate cruft.
 
 ## Where to look first
 
 - "How does login actually work?" → `src/auth/magic-link.ts` (request) + `src/auth/session.ts` (verify) + `src/auth/plugin.ts` (HTTP).
 - "What does a request hit?" → `onRequest` hook in `src/auth/plugin.ts` populates `request.user`.
-- "How is permission checked?" → `src/teams/permissions.ts` for teams; `requireAdmin(actor)` in `src/admin/operations.ts` for admin.
+- "How is permission checked?" → `src/teams/permissions.ts` for teams; `requireOwner(actor)` in `src/admin/operations.ts` for system Owner gate.
 - "Why does X return that status code?" → `src/core/error-handler.ts`.
 - "How is data stored?" → migrations in `src/migrations/0NN_*.ts`; queries in `src/adapters/sqlite.ts`.
 - "How is the package built?" → `tsconfig.build.json` + `package.json` `build` script. Outputs to `dist/`.
-- "How are docs maintained?" → `README.md` is consumer-facing; `CLAUDE.md` (this file) is contributor-facing; `SPEC.md` and `PLAN.md` are historical design records.
+- "How are docs maintained?" → `README.md` is consumer-facing; `CLAUDE.md` (this file) is contributor-facing; `docs/superpowers/specs/` holds approved feature specs; `SPEC.md` + `PLAN.md` are pre-1.0 historical records.
 
 ## Historical artifacts
 
-- `SPEC.md` — original design spec, all 12 open questions resolved 2026-05-04.
-- `PLAN.md` — six-stage build plan executed top-to-bottom in commits `Stage 1` through `Stage 6` on `main`.
+- `SPEC.md` — original (v1) design spec.
+- `PLAN.md` — six-stage v1 build plan (commits `Stage 1` through `Stage 6`).
+- `docs/superpowers/specs/2026-05-04-team-self-service-and-avatars-design.md` — v2 spec (auto-add membership, role rename, avatars).
 
 These are kept for historical reference. New work doesn't update them; it updates `README.md` and this file.

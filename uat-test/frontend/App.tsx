@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import {
   AccountMenu,
   AdminUsersTable,
-  AcceptInvite,
   AuditLog,
   InviteForm,
   LoginForm,
@@ -42,7 +41,6 @@ export function App() {
         {route === '/login' && <LoginPage />}
         {route === '/verify-result' && <VerifyResultPage />}
         {route === '/my-teams' && <TeamsPage />}
-        {route === '/invites/accept' && <AcceptInvitePage />}
         {route === '/admin-panel' && <AdminPage />}
         {route === '/admin-panel/audit' && <AuditPage />}
       </main>
@@ -80,7 +78,7 @@ function Header() {
         {user && (
           <a href="/my-teams" style={linkStyle}>Teams</a>
         )}
-        {user?.role === 'admin' && (
+        {user?.role === 'owner' && (
           <a href="/admin-panel" style={linkStyle}>Admin</a>
         )}
         <AccountMenu signInHref="/login" />
@@ -152,14 +150,14 @@ function TeamsPage() {
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <h1 style={{ margin: '0 0 4px', fontWeight: 600 }}>{active.team.name}</h1>
       <p style={{ margin: '0 0 24px', color: '#94a3b8', fontSize: 13 }}>
-        /{active.team.slug} · you are <strong>{active.role}</strong>
+        you are <strong>{active.role === 'admin' ? 'Admin' : 'User'}</strong>
       </p>
       <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>Members</h2>
       <TeamMembersList teamId={active.team.id} />
-      {(active.role === 'owner' || active.role === 'admin') && (
+      {active.role === 'admin' && (
         <section style={{ marginTop: 32, ...cardStyle }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, margin: '0 0 12px' }}>
-            Invite a teammate
+            Add a member
           </h2>
           <InviteForm teamId={active.team.id} />
         </section>
@@ -168,16 +166,10 @@ function TeamsPage() {
   );
 }
 
-function AcceptInvitePage() {
-  const token = new URLSearchParams(window.location.search).get('token') ?? '';
-  if (!token) return <p style={{ color: '#94a3b8' }}>Missing token.</p>;
-  return <AcceptInvite token={token} redirectTo="/my-teams" loginHref="/login" />;
-}
-
 function AdminPage() {
   const { user } = useAuth();
-  if (user?.role !== 'admin')
-    return <p style={{ color: '#f87171' }}>Admins only.</p>;
+  if (user?.role !== 'owner')
+    return <p style={{ color: '#f87171' }}>Owners only.</p>;
   return (
     <div style={{ maxWidth: 1024, margin: '0 auto' }}>
       <div style={headerRowStyle}>

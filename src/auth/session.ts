@@ -2,6 +2,10 @@
 // session tokens on subsequent requests, revoke them on logout. Sliding
 // expiry per spec — every authenticated request bumps last_used_at and
 // expires_at.
+//
+// On magic-link verify, after the user is materialized, we run
+// consumePendingInvitesForUser to auto-add them to any teams they were added
+// to before they had an account.
 
 import {
   InvalidTokenError,
@@ -9,16 +13,18 @@ import {
   TokenExpiredError,
   UserSuspendedError,
 } from '../core/errors.js';
+import { deriveInitials, pickColor } from '../core/avatar.js';
 import type { Repository } from '../core/repository.js';
 import type { User } from '../core/types.js';
 import { generateToken, hashToken } from './tokens.js';
+import { consumePendingInvitesForUser } from '../teams/operations.js';
 
 const DAY_MS = 86_400_000;
 
 export interface VerifyMagicLinkInput {
   repo: Repository;
   token: string;
-  adminEmails: string[];
+  ownerEmails: string[];
   sessionTtlDays: number;
   now?: number;
   ip?: string | null;
@@ -41,23 +47,32 @@ export async function verifyMagicLinkAndCreateSession(
   if (link.consumedAt !== null) throw new TokenAlreadyConsumedError();
   if (link.expiresAt < now) throw new TokenExpiredError('Magic link expired');
 
-  const adminSet = new Set(input.adminEmails.map((e) => e.toLowerCase()));
-  const isAdmin = adminSet.has(link.email);
+  const ownerSet = new Set(input.ownerEmails.map((e) => e.toLowerCase()));
+  const isOwner = ownerSet.has(link.email);
 
   // Find or create the user
   let user = await input.repo.findUserByEmail(link.email);
   if (!user) {
+    const displayName = defaultDisplayName(link.email);
+    // Pre-compute avatar from displayName + soon-to-be-assigned id is impossible —
+    // adapter generates the id. Use a temporary placeholder, then patch with the
+    // real id-derived color after creation.
     user = await input.repo.createUser(
       {
         email: link.email,
-        role: isAdmin ? 'admin' : 'user',
-        displayName: defaultDisplayName(link.email),
+        role: isOwner ? 'owner' : 'user',
+        displayName,
+        avatarColor: '#525252',
+        avatarInitials: deriveInitials({ displayName, email: link.email }),
       },
       now,
     );
-  } else if (isAdmin && user.role !== 'admin') {
-    // Email was added to ADMIN_EMAILS after the user was created. Promote them.
-    user = await input.repo.updateUser(user.id, { role: 'admin' });
+    user = await input.repo.updateUser(user.id, {
+      avatarColor: pickColor(user.id),
+    });
+  } else if (isOwner && user.role !== 'owner') {
+    // Email was added to ownerEmails after the user was created. Promote them.
+    user = await input.repo.updateUser(user.id, { role: 'owner' });
   }
 
   if (user.status === 'suspended' || user.status === 'deleted') {
@@ -66,6 +81,9 @@ export async function verifyMagicLinkAndCreateSession(
 
   // Mark the link consumed (single-use)
   await input.repo.consumeMagicLink(tokenHash, now);
+
+  // Materialize any pending team memberships for this user's email.
+  await consumePendingInvitesForUser({ repo: input.repo, user, now });
 
   // Issue session
   const sessionToken = generateToken();

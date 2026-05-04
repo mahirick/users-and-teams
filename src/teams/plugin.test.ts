@@ -40,7 +40,11 @@ async function makeApp(): Promise<Ctx> {
   return { app, transport };
 }
 
-async function loginAs(app: FastifyInstance, transport: ConsoleTransport, email: string): Promise<string> {
+async function loginAs(
+  app: FastifyInstance,
+  transport: ConsoleTransport,
+  email: string,
+): Promise<string> {
   await app.inject({
     method: 'POST',
     url: '/auth/request-link',
@@ -67,86 +71,95 @@ describe('teamsPlugin', () => {
     await ctx.app.close();
   });
 
-  it('full flow: create team → invite → accept → list members → change role → remove', async () => {
-    // Owner signs in
-    const ownerCookie = await loginAs(ctx.app, ctx.transport, 'owner@example.com');
+  it('full flow: create team → add existing member → list → remove', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
 
     // Create team
     const createRes = await ctx.app.inject({
       method: 'POST',
       url: '/teams',
-      payload: { name: 'Eng', slug: 'eng' },
-      headers: { cookie: `sess=${ownerCookie}` },
+      payload: { name: 'Eng' },
+      headers: { cookie: `sess=${adminCookie}` },
     });
     expect(createRes.statusCode).toBe(201);
-    const team = (createRes.json() as { team: { id: string; slug: string } }).team;
-    expect(team.slug).toBe('eng');
+    const team = (createRes.json() as { team: { id: string; name: string; nameNormalized: string } }).team;
+    expect(team.nameNormalized).toBe('eng');
 
-    // Owner sees it in /teams
+    // Admin sees it in /teams as 'admin'
     const myRes = await ctx.app.inject({
       method: 'GET',
       url: '/teams',
-      headers: { cookie: `sess=${ownerCookie}` },
+      headers: { cookie: `sess=${adminCookie}` },
     });
     const list = (myRes.json() as { teams: Array<{ team: { id: string }; role: string }> }).teams;
     expect(list).toHaveLength(1);
-    expect(list[0]!.role).toBe('owner');
+    expect(list[0]!.role).toBe('admin');
 
-    // Invite a guest
-    const inviteRes = await ctx.app.inject({
+    // Pre-create another user (so add becomes immediate)
+    await loginAs(ctx.app, ctx.transport, 'guest@example.com');
+
+    const addRes = await ctx.app.inject({
       method: 'POST',
-      url: `/teams/${team.id}/invites`,
-      payload: { email: 'guest@example.com', role: 'member' },
-      headers: { cookie: `sess=${ownerCookie}` },
+      url: `/teams/${team.id}/members`,
+      payload: { email: 'guest@example.com' },
+      headers: { cookie: `sess=${adminCookie}` },
     });
-    expect(inviteRes.statusCode).toBe(201);
-    const inviteEmailMsg = ctx.transport.captured[ctx.transport.captured.length - 1]!;
-    const inviteToken = inviteEmailMsg.text.match(
-      /invites\/accept\?token=([A-Za-z0-9_-]+)/,
-    )![1]!;
-
-    // Guest signs in (creates an account)
-    const guestCookie = await loginAs(ctx.app, ctx.transport, 'guest@example.com');
-
-    // Guest accepts the invite
-    const acceptRes = await ctx.app.inject({
-      method: 'GET',
-      url: `/teams/invites/accept?token=${inviteToken}`,
-      headers: { cookie: `sess=${guestCookie}` },
-    });
-    expect(acceptRes.statusCode).toBe(200);
+    expect(addRes.statusCode).toBe(201);
+    expect((addRes.json() as { status: string }).status).toBe('added');
 
     // Members list now has 2
     const teamRes = await ctx.app.inject({
       method: 'GET',
       url: `/teams/${team.id}`,
-      headers: { cookie: `sess=${ownerCookie}` },
+      headers: { cookie: `sess=${adminCookie}` },
     });
-    const detail = teamRes.json() as { members: unknown[] };
+    const detail = teamRes.json() as { members: Array<{ user: { id: string; email: string }; member: { role: string } }> };
     expect(detail.members).toHaveLength(2);
+    const guest = detail.members.find((m) => m.user.email === 'guest@example.com')!;
+    expect(guest.member.role).toBe('user');
 
-    // Owner promotes guest to admin
-    const guestUserId = (
-      (
-        teamRes.json() as { members: Array<{ user: { id: string; email: string } }> }
-      ).members.find((m) => m.user.email === 'guest@example.com')!.user.id
-    );
-    const promoteRes = await ctx.app.inject({
-      method: 'PATCH',
-      url: `/teams/${team.id}/members/${guestUserId}`,
-      payload: { role: 'admin' },
-      headers: { cookie: `sess=${ownerCookie}` },
-    });
-    expect(promoteRes.statusCode).toBe(200);
-    expect((promoteRes.json() as { member: { role: string } }).member.role).toBe('admin');
-
-    // Owner removes guest
+    // Admin removes guest
     const rmRes = await ctx.app.inject({
       method: 'DELETE',
-      url: `/teams/${team.id}/members/${guestUserId}`,
-      headers: { cookie: `sess=${ownerCookie}` },
+      url: `/teams/${team.id}/members/${guest.user.id}`,
+      headers: { cookie: `sess=${adminCookie}` },
     });
     expect(rmRes.statusCode).toBe(200);
+  });
+
+  it('add-by-email for an unknown user creates a pending invite (no immediate membership)', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
+    const team = (
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: '/teams',
+          payload: { name: 'Engineering' },
+          headers: { cookie: `sess=${adminCookie}` },
+        })
+      ).json() as { team: { id: string } }
+    ).team;
+
+    const addRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/teams/${team.id}/members`,
+      payload: { email: 'newcomer@example.com' },
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    expect(addRes.statusCode).toBe(201);
+    expect((addRes.json() as { status: string }).status).toBe('pending_signup');
+
+    // Newcomer signs in for the first time → membership materializes
+    const newcomerCookie = await loginAs(ctx.app, ctx.transport, 'newcomer@example.com');
+    const myRes = await ctx.app.inject({
+      method: 'GET',
+      url: '/teams',
+      headers: { cookie: `sess=${newcomerCookie}` },
+    });
+    const list = (myRes.json() as { teams: Array<{ team: { id: string }; role: string }> }).teams;
+    expect(list).toHaveLength(1);
+    expect(list[0]!.team.id).toBe(team.id);
+    expect(list[0]!.role).toBe('user');
   });
 
   it('returns 401 when not signed in', async () => {
@@ -155,14 +168,14 @@ describe('teamsPlugin', () => {
   });
 
   it('returns 403 when a non-member tries to read a team detail', async () => {
-    const ownerCookie = await loginAs(ctx.app, ctx.transport, 'owner@example.com');
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
     const team = (
       (
         await ctx.app.inject({
           method: 'POST',
           url: '/teams',
-          payload: { name: 'A', slug: 'a' },
-          headers: { cookie: `sess=${ownerCookie}` },
+          payload: { name: 'A' },
+          headers: { cookie: `sess=${adminCookie}` },
         })
       ).json() as { team: { id: string } }
     ).team;
@@ -176,60 +189,120 @@ describe('teamsPlugin', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('returns 409 on duplicate slug', async () => {
-    const ownerCookie = await loginAs(ctx.app, ctx.transport, 'owner@example.com');
+  it('returns 409 on duplicate team name', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
     await ctx.app.inject({
       method: 'POST',
       url: '/teams',
-      payload: { name: 'A', slug: 'taken' },
-      headers: { cookie: `sess=${ownerCookie}` },
+      payload: { name: 'Taken' },
+      headers: { cookie: `sess=${adminCookie}` },
     });
     const res = await ctx.app.inject({
       method: 'POST',
       url: '/teams',
-      payload: { name: 'B', slug: 'taken' },
-      headers: { cookie: `sess=${ownerCookie}` },
+      payload: { name: '  TAKEN ' },
+      headers: { cookie: `sess=${adminCookie}` },
     });
     expect(res.statusCode).toBe(409);
   });
 
-  it('returns 403 when a regular member tries to invite', async () => {
-    const ownerCookie = await loginAs(ctx.app, ctx.transport, 'owner@example.com');
+  it('returns 403 when a regular User tries to add another member', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
     const team = (
       (
         await ctx.app.inject({
           method: 'POST',
           url: '/teams',
-          payload: { name: 'A', slug: 'a' },
-          headers: { cookie: `sess=${ownerCookie}` },
+          payload: { name: 'A' },
+          headers: { cookie: `sess=${adminCookie}` },
         })
       ).json() as { team: { id: string } }
     ).team;
 
-    // Add a regular member
+    // Pre-create the User and add them
+    await loginAs(ctx.app, ctx.transport, 'm@example.com');
     await ctx.app.inject({
       method: 'POST',
-      url: `/teams/${team.id}/invites`,
-      payload: { email: 'm@example.com', role: 'member' },
-      headers: { cookie: `sess=${ownerCookie}` },
-    });
-    const inviteToken = ctx.transport.captured.at(-1)!.text.match(
-      /invites\/accept\?token=([A-Za-z0-9_-]+)/,
-    )![1]!;
-    const memberCookie = await loginAs(ctx.app, ctx.transport, 'm@example.com');
-    await ctx.app.inject({
-      method: 'GET',
-      url: `/teams/invites/accept?token=${inviteToken}`,
-      headers: { cookie: `sess=${memberCookie}` },
+      url: `/teams/${team.id}/members`,
+      payload: { email: 'm@example.com' },
+      headers: { cookie: `sess=${adminCookie}` },
     });
 
-    // Member tries to invite someone — denied
+    const memberCookie = await loginAs(ctx.app, ctx.transport, 'm@example.com');
     const res = await ctx.app.inject({
       method: 'POST',
-      url: `/teams/${team.id}/invites`,
-      payload: { email: 'guest@example.com', role: 'member' },
+      url: `/teams/${team.id}/members`,
+      payload: { email: 'guest@example.com' },
       headers: { cookie: `sess=${memberCookie}` },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('admin transfer-then-leave: transferAdmin then DELETE self', async () => {
+    const adminCookie = await loginAs(ctx.app, ctx.transport, 'admin@example.com');
+    const team = (
+      (
+        await ctx.app.inject({
+          method: 'POST',
+          url: '/teams',
+          payload: { name: 'Acme' },
+          headers: { cookie: `sess=${adminCookie}` },
+        })
+      ).json() as { team: { id: string } }
+    ).team;
+
+    // Add a User who can become the new Admin
+    await loginAs(ctx.app, ctx.transport, 'heir@example.com');
+    await ctx.app.inject({
+      method: 'POST',
+      url: `/teams/${team.id}/members`,
+      payload: { email: 'heir@example.com' },
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    // Find the heir's user id
+    const detail = (
+      (
+        await ctx.app.inject({
+          method: 'GET',
+          url: `/teams/${team.id}`,
+          headers: { cookie: `sess=${adminCookie}` },
+        })
+      ).json() as { members: Array<{ user: { id: string; email: string } }> }
+    );
+    const heirId = detail.members.find((m) => m.user.email === 'heir@example.com')!.user.id;
+
+    // Original admin tries to leave → 403
+    const adminSelf = (
+      (
+        await ctx.app.inject({
+          method: 'GET',
+          url: '/auth/me',
+          headers: { cookie: `sess=${adminCookie}` },
+        })
+      ).json() as { user: { id: string } }
+    ).user;
+    const cannotLeave = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/teams/${team.id}/members/${adminSelf.id}`,
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    expect(cannotLeave.statusCode).toBe(403);
+
+    // Transfer admin to heir
+    const transferRes = await ctx.app.inject({
+      method: 'POST',
+      url: `/teams/${team.id}/transfer-admin`,
+      payload: { toUserId: heirId },
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    expect(transferRes.statusCode).toBe(200);
+
+    // Now original admin can leave (they're a User now)
+    const canLeave = await ctx.app.inject({
+      method: 'DELETE',
+      url: `/teams/${team.id}/members/${adminSelf.id}`,
+      headers: { cookie: `sess=${adminCookie}` },
+    });
+    expect(canLeave.statusCode).toBe(200);
   });
 });

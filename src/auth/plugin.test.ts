@@ -25,7 +25,7 @@ async function makeApp(overrides: Partial<Parameters<typeof authPlugin>[1]> = {}
     email: transport,
     siteUrl: 'https://app.example.com',
     siteName: 'Test App',
-    adminEmails: ['admin@example.com'],
+    ownerEmails: ['admin@example.com'],
     sessionTtlDays: 90,
     magicLinkTtlMin: 15,
     cookieName: 'test_session',
@@ -152,7 +152,7 @@ describe('authPlugin', () => {
       expect(body.user.role).toBe('user');
     });
 
-    it('assigns admin role when email is in adminEmails allowlist', async () => {
+    it('assigns owner role when email is in ownerEmails allowlist', async () => {
       await ctx.app.inject({
         method: 'POST',
         url: '/auth/request-link',
@@ -171,7 +171,7 @@ describe('authPlugin', () => {
         headers: { cookie: `test_session=${cookie}` },
       });
       const body = meRes.json() as { user: { role: string } };
-      expect(body.user.role).toBe('admin');
+      expect(body.user.role).toBe('owner');
     });
 
     it('redirects with status=error for an invalid token', async () => {

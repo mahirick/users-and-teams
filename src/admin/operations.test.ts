@@ -20,7 +20,7 @@ describe('admin operations', () => {
   });
 
   async function seedAdmin() {
-    return repo.createUser({ email: 'admin@example.com', role: 'admin' }, T0);
+    return repo.createUser({ email: 'owner@example.com', role: 'owner' }, T0);
   }
   async function seedUser(email: string) {
     return repo.createUser({ email }, T0);
@@ -57,10 +57,10 @@ describe('admin operations', () => {
 
       // Make them an owner of a team for the teams field
       const team = await repo.createTeam(
-        { id: 'tm1', name: 'T', slug: 't', ownerId: target.id },
+        { id: 'tm1', name: 'T', adminId: target.id },
         T0,
       );
-      await repo.addTeamMember(team.id, target.id, 'owner', T0);
+      await repo.addTeamMember(team.id, target.id, 'admin', T0);
       await repo.createAuditEntry(
         { actorId: admin.id, action: 'user.create', targetId: target.id },
         T0,
@@ -105,7 +105,7 @@ describe('admin operations', () => {
         repo,
         actor: admin,
         userId: target.id,
-        role: 'admin',
+        role: 'owner',
       });
       const audit = await repo.listAuditEntries({ targetId: target.id });
       expect(audit.some((e) => e.action === 'user.role.change')).toBe(true);

@@ -1,15 +1,15 @@
-// Admin operations: list / read / update / suspend / delete users + audit log.
-// All operations check that `actor.role === 'admin'` (system role) before
-// performing any state change.
+// Admin (system-Owner) operations: list / read / update / suspend / delete
+// users + audit log. All operations check that `actor.role === 'owner'`
+// (system role) before performing any state change.
 
 import { AUDIT_ACTIONS, recordAudit } from '../core/audit.js';
 import { NotAuthorizedError, UserNotFoundError } from '../core/errors.js';
 import type { Repository, ListUsersResult } from '../core/repository.js';
 import type { AuditEntry, Role, User, UserStatus } from '../core/types.js';
 
-function requireAdmin(actor: User): void {
-  if (actor.role !== 'admin') {
-    throw new NotAuthorizedError('Admin role required');
+function requireOwner(actor: User): void {
+  if (actor.role !== 'owner') {
+    throw new NotAuthorizedError('Owner role required');
   }
 }
 
@@ -22,7 +22,7 @@ export interface ListUsersInput {
 }
 
 export async function listUsers(input: ListUsersInput): Promise<ListUsersResult> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const filter: Parameters<Repository['listUsers']>[0] = {};
   if (input.search !== undefined) filter.search = input.search;
   if (input.page !== undefined) filter.page = input.page;
@@ -46,7 +46,7 @@ export interface UserDetail {
 }
 
 export async function getUserDetail(input: GetUserDetailInput): Promise<UserDetail> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const user = await input.repo.getUser(input.userId);
   if (!user) throw new UserNotFoundError();
   const teams = await input.repo.listTeamsForUser(user.id);
@@ -65,7 +65,7 @@ export interface UpdateUserInput {
 }
 
 export async function updateUser(input: UpdateUserInput): Promise<User> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const target = await input.repo.getUser(input.userId);
   if (!target) throw new UserNotFoundError();
 
@@ -112,7 +112,7 @@ export interface SuspendUserInput {
 }
 
 export async function suspendUser(input: SuspendUserInput): Promise<User> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const target = await input.repo.getUser(input.userId);
   if (!target) throw new UserNotFoundError();
   const updated = await input.repo.updateUser(input.userId, { status: 'suspended' });
@@ -126,7 +126,7 @@ export async function suspendUser(input: SuspendUserInput): Promise<User> {
 }
 
 export async function unsuspendUser(input: SuspendUserInput): Promise<User> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const target = await input.repo.getUser(input.userId);
   if (!target) throw new UserNotFoundError();
   const updated = await input.repo.updateUser(input.userId, { status: 'active' });
@@ -145,9 +145,9 @@ export interface DeleteUserInput {
 }
 
 export async function deleteUser(input: DeleteUserInput): Promise<void> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   if (input.userId === input.actor.id) {
-    throw new NotAuthorizedError('Admins cannot delete their own account');
+    throw new NotAuthorizedError('Owners cannot delete their own account');
   }
   const target = await input.repo.getUser(input.userId);
   if (!target) throw new UserNotFoundError();
@@ -171,7 +171,7 @@ export interface ListAuditLogInput {
 }
 
 export async function listAuditLog(input: ListAuditLogInput): Promise<AuditEntry[]> {
-  requireAdmin(input.actor);
+  requireOwner(input.actor);
   const filter: Parameters<Repository['listAuditEntries']>[0] = {};
   if (input.action !== undefined) filter.action = input.action;
   if (input.actorId !== undefined) filter.actorId = input.actorId;

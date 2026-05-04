@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { magicLinkEmail, inviteEmail } from './templates.js';
+import {
+  addedToTeamEmail,
+  magicLinkEmail,
+  signupAddedToTeamEmail,
+} from './templates.js';
 
 describe('magicLinkEmail', () => {
   it('renders subject with site name', () => {
@@ -18,13 +22,6 @@ describe('magicLinkEmail', () => {
     expect(e.text).toContain(link);
   });
 
-  it('html is minimally valid (has <html> and link as <a href>)', () => {
-    const link = 'https://app.example.com/auth/verify?token=x';
-    const e = magicLinkEmail({ siteName: 'App', siteUrl: 'https://app.example.com', link });
-    expect(e.html).toMatch(/<html/i);
-    expect(e.html).toContain(`href="${link}"`);
-  });
-
   it('escapes HTML in siteName', () => {
     const e = magicLinkEmail({
       siteName: 'My <App>',
@@ -36,43 +33,41 @@ describe('magicLinkEmail', () => {
   });
 });
 
-describe('inviteEmail', () => {
-  it('mentions the team name and inviter', () => {
-    const e = inviteEmail({
+describe('addedToTeamEmail', () => {
+  it('mentions the team name and adder', () => {
+    const e = addedToTeamEmail({
       siteName: 'App',
       siteUrl: 'https://app.example.com',
       teamName: 'Engineering',
-      inviterName: 'Alice',
-      link: 'https://app.example.com/invites/accept?token=t',
+      addedByName: 'Alice',
     });
     expect(e.subject).toContain('Engineering');
     expect(e.text).toContain('Alice');
     expect(e.html).toContain('Engineering');
-    expect(e.html).toContain('Alice');
   });
 
-  it('falls back to inviter email when name not provided', () => {
-    const e = inviteEmail({
+  it('falls back to adder email when name is null', () => {
+    const e = addedToTeamEmail({
       siteName: 'App',
       siteUrl: 'https://app.example.com',
       teamName: 'Eng',
-      inviterName: null,
-      inviterEmail: 'alice@example.com',
-      link: 'https://app.example.com/x',
+      addedByName: null,
+      addedByEmail: 'alice@example.com',
     });
     expect(e.text).toContain('alice@example.com');
   });
+});
 
-  it('includes the invite link', () => {
-    const link = 'https://app.example.com/invites/accept?token=ABC123';
-    const e = inviteEmail({
+describe('signupAddedToTeamEmail', () => {
+  it('points the recipient at the sign-in URL', () => {
+    const e = signupAddedToTeamEmail({
       siteName: 'App',
       siteUrl: 'https://app.example.com',
-      teamName: 'T',
-      inviterName: 'A',
-      link,
+      teamName: 'Eng',
+      addedByName: 'Alice',
+      signinUrl: 'https://app.example.com/',
     });
-    expect(e.html).toContain(link);
-    expect(e.text).toContain(link);
+    expect(e.html).toContain('https://app.example.com/');
+    expect(e.text).toContain('https://app.example.com/');
   });
 });

@@ -16,7 +16,9 @@ export interface PublicUser {
   id: string;
   email: string;
   displayName: string | null;
-  role: 'user' | 'admin';
+  role: 'user' | 'owner';
+  avatarColor: string;
+  avatarInitials: string;
 }
 
 export interface AuthContextValue {

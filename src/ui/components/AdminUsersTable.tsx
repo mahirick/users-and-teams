@@ -4,13 +4,16 @@
 import { useContext, useEffect, useState } from 'react';
 import { ProviderConfigContext } from '../provider-internal.js';
 import { useAuth } from '../provider.js';
+import { Avatar } from './Avatar.js';
 
 interface UserRow {
   id: string;
   email: string;
   displayName: string | null;
-  role: 'user' | 'admin';
+  role: 'user' | 'owner';
   status: 'active' | 'suspended' | 'deleted';
+  avatarColor: string;
+  avatarInitials: string;
   createdAt: number;
   lastSeenAt: number | null;
 }
@@ -113,12 +116,21 @@ export function AdminUsersTable({ className, pageSize = 25, onSelect }: AdminUse
                 onClick={() => onSelect?.(u)}
               >
                 <td style={td}>
-                  <strong>{u.displayName ?? u.email}</strong>
-                  <br />
-                  <span style={{ color: '#94a3b8', fontSize: 12 }}>{u.email}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Avatar
+                      initials={u.avatarInitials}
+                      color={u.avatarColor}
+                      size="md"
+                      label={u.displayName ?? u.email}
+                    />
+                    <div>
+                      <strong>{u.displayName ?? u.email}</strong>
+                      <div style={{ color: '#94a3b8', fontSize: 12 }}>{u.email}</div>
+                    </div>
+                  </div>
                 </td>
                 <td style={td}>
-                  <Badge color={u.role === 'admin' ? '#06b6d4' : '#94a3b8'}>{u.role}</Badge>
+                  <Badge color={u.role === 'owner' ? '#06b6d4' : '#94a3b8'}>{u.role}</Badge>
                 </td>
                 <td style={td}>
                   <Badge

@@ -18,11 +18,12 @@
 //      });
 
 import {
+  AlreadyTeamMemberError,
   InvalidTokenError,
   NotAuthorizedError,
   RateLimitError,
+  TeamNameTakenError,
   TeamNotFoundError,
-  TeamSlugTakenError,
   TokenAlreadyConsumedError,
   TokenExpiredError,
   UserNotFoundError,
@@ -55,7 +56,7 @@ export function mapUatError(err: unknown): MappedError | null {
   if (err instanceof UserNotFoundError || err instanceof TeamNotFoundError) {
     return { statusCode: 404, body: { error: err.code, message: err.message } };
   }
-  if (err instanceof TeamSlugTakenError) {
+  if (err instanceof TeamNameTakenError || err instanceof AlreadyTeamMemberError) {
     return { statusCode: 409, body: { error: err.code, message: err.message } };
   }
   if (

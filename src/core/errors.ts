@@ -57,10 +57,10 @@ export class TeamNotFoundError extends UsersAndTeamsError {
   }
 }
 
-export class TeamSlugTakenError extends UsersAndTeamsError {
-  constructor(slug: string) {
-    super(`Team slug "${slug}" already taken`, 'TEAM_SLUG_TAKEN');
-    this.name = 'TeamSlugTakenError';
+export class TeamNameTakenError extends UsersAndTeamsError {
+  constructor(name: string) {
+    super(`Team name "${name}" already taken`, 'TEAM_NAME_TAKEN');
+    this.name = 'TeamNameTakenError';
   }
 }
 
@@ -75,5 +75,12 @@ export class UserSuspendedError extends UsersAndTeamsError {
   constructor() {
     super('User account is suspended', 'USER_SUSPENDED');
     this.name = 'UserSuspendedError';
+  }
+}
+
+export class AlreadyTeamMemberError extends UsersAndTeamsError {
+  constructor() {
+    super('Already a member of this team', 'ALREADY_MEMBER');
+    this.name = 'AlreadyTeamMemberError';
   }
 }
