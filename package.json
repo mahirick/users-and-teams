@@ -1,6 +1,6 @@
 {
   "name": "@mahirick/users-and-teams",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Self-hosted user accounts, magic-link auth, sessions, teams, and admin — drops into any Fastify backend.",
   "license": "MIT",
   "author": "Rick (Mahisoft)",

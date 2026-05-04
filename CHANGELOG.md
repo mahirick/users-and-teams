@@ -6,6 +6,16 @@ the project follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [v2.0.2] — 2026-05-04
+
+### Fixed
+- `npm run lint` (`tsc --noEmit`) now passes cleanly. `tsconfig.json` `types` array picks up `@testing-library/jest-dom`, removing pre-existing `toBeInTheDocument` / `toHaveAttribute` type errors in UI tests. No runtime change.
+
+### Notes
+v2.0.1 was pushed without this fix; **install v2.0.2** instead.
+
+---
+
 ## [v2.0.1] — 2026-05-04
 
 ### Added
@@ -14,7 +24,7 @@ the project follows [Semantic Versioning](https://semver.org/).
 - `INTEGRATION.md` — SHA-pin install recipe and a "Migrating from a password gate" recipe for consumers swapping out a localStorage-style admin lock.
 
 ### Notes
-No code changes. This is a packaging-only release so consumers can pin to a SHA that ships the LICENSE and the install docs they need.
+No code changes. Superseded by v2.0.2 within the same day (lint cleanup) — install v2.0.2 instead. v2.0.1 was kept as a tag for historical reference rather than moved.
 
 ---
 

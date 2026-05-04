@@ -21,7 +21,7 @@
     "incremental": true,
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node", "@testing-library/jest-dom"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests", "demo"]

@@ -78,17 +78,17 @@ Frontend side mirrors this:
 The package isn't on the public npm registry yet. Install from GitHub — `prepare` builds `dist/` for you on install:
 
 ```bash
-# Production: pin to the v2.0.1 commit SHA (immutable, reproducible)
+# Production: pin to the v2.0.2 commit SHA (immutable, reproducible)
 npm install \
-  github:mahirick/users-and-teams#<v2.0.1-commit-sha> \
+  github:mahirick/users-and-teams#<v2.0.2-commit-sha> \
   fastify @fastify/cookie better-sqlite3
 # Optional, only if you use the React components:
 npm install react react-dom
 ```
 
-Get the SHA: `git ls-remote https://github.com/mahirick/users-and-teams refs/tags/v2.0.1^{}` (the `^{}` deref returns the commit, not the annotated-tag object).
+Get the SHA: `git ls-remote https://github.com/mahirick/users-and-teams refs/tags/v2.0.2^{}` (the `^{}` deref returns the commit, not the annotated-tag object).
 
-For local dev where reproducibility doesn't bite, pinning to the tag is fine: `github:mahirick/users-and-teams#v2.0.1`.
+For local dev where reproducibility doesn't bite, pinning to the tag is fine: `github:mahirick/users-and-teams#v2.0.2`.
 
 See [`INTEGRATION.md`](./INTEGRATION.md) for the full install matrix per scenario (Postgres vs SQLite, SMTP vs Resend, FS-store vs cloud avatars, etc.). The package's `peerDependencies` are all optional — install only what you actually use.
 

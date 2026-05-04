@@ -43,13 +43,13 @@ The package isn't on the public npm registry yet. Install directly from GitHub �
 ### Production (recommended): pin to a commit SHA
 
 ```bash
-# Pin to the v2.0.1 commit (canonical pin format — never moves)
+# Pin to the v2.0.2 commit (canonical pin format — never moves)
 npm install \
-  github:mahirick/users-and-teams#<v2.0.1-commit-sha> \
+  github:mahirick/users-and-teams#<v2.0.2-commit-sha> \
   fastify @fastify/cookie better-sqlite3
 ```
 
-> Replace `<v2.0.1-commit-sha>` with the output of `git ls-remote https://github.com/mahirick/users-and-teams refs/tags/v2.0.1^{}` (the `^{}` deref gets the commit, not the tag object). The latest published SHA is recorded in `CHANGELOG.md`.
+> Replace `<v2.0.2-commit-sha>` with the output of `git ls-remote https://github.com/mahirick/users-and-teams refs/tags/v2.0.2^{}` (the `^{}` deref gets the commit, not the tag object). The latest published SHA is recorded in `CHANGELOG.md`.
 
 Why a commit SHA and not a tag? Tags are mutable — anyone with push access can move them. A commit SHA is content-addressed and can never silently change. `npm install` against a tag does record the resolved SHA in `package-lock.json`, so a `npm ci` install is reproducible — but a fresh `npm install` (e.g. a Docker image rebuild that loses the lock) will re-resolve the tag and could pull a different commit if the tag was rewritten. Pinning the SHA in `package.json` removes that class of trust assumption.
 
@@ -57,7 +57,7 @@ Why a commit SHA and not a tag? Tags are mutable — anyone with push access can
 
 ```bash
 npm install \
-  github:mahirick/users-and-teams#v2.0.1 \
+  github:mahirick/users-and-teams#v2.0.2 \
   fastify @fastify/cookie better-sqlite3
 ```
 
@@ -71,7 +71,7 @@ Your `package.json` ends up with one of:
 
 ```json
 "@mahirick/users-and-teams": "github:mahirick/users-and-teams#<sha>"
-"@mahirick/users-and-teams": "github:mahirick/users-and-teams#v2.0.1"
+"@mahirick/users-and-teams": "github:mahirick/users-and-teams#v2.0.2"
 "@mahirick/users-and-teams": "github:mahirick/users-and-teams"
 ```
 
