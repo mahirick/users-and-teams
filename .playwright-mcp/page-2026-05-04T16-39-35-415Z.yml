@@ -1,0 +1,19 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "users-and-teams demo" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - link "Sign in" [ref=e6] [cursor=pointer]:
+      - /url: /login
+  - main [ref=e7]:
+    - generic [ref=e9]:
+      - heading "Sign in to the demo" [level=1] [ref=e10]
+      - paragraph [ref=e11]: We'll email you a one-time link.
+      - generic [ref=e12]: Email
+      - textbox "Email" [disabled] [ref=e13]:
+        - /placeholder: you@example.com
+        - text: alice@example.com
+      - button "Send magic link" [disabled] [ref=e14]
+      - status [ref=e15]:
+        - text: Check your inbox at
+        - strong [ref=e16]: alice@example.com
+        - text: . The link is valid for 15 minutes.

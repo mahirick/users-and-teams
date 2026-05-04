@@ -34,3 +34,6 @@ export {
   type RateLimitResult,
 } from './auth/rate-limit.js';
 export { generateToken, hashToken } from './auth/tokens.js';
+
+// React UI lives at @mahirick/users-and-teams/react — keeps node:crypto and
+// fastify out of browser bundles when consumers only need the UI side.

@@ -1,1 +1,317 @@
-/* Stage 3 will define defaults; placeholder for Stage 1 build */
+/*
+ * @mahirick/users-and-teams default stylesheet.
+ *
+ * Every visual property reads from a --uat-* CSS variable. Override at :root in
+ * the consumer's own stylesheet to retheme. The defaults below produce an
+ * opinionated dark theme with a cyan accent and a JetBrains-Mono header style.
+ *
+ * Token catalog:
+ *
+ *   Surface
+ *     --uat-bg-deep         page background
+ *     --uat-bg-surface      card / panel background
+ *     --uat-bg-secondary    nested surface (menu items, hover targets)
+ *     --uat-bg-hover        hover state for interactive surfaces
+ *
+ *   Border
+ *     --uat-border          standard border (cards, inputs)
+ *     --uat-border-light    subtle separators
+ *
+ *   Text
+ *     --uat-text-primary    body text on surfaces
+ *     --uat-text-muted      secondary text (helper, captions)
+ *     --uat-text-dim        very low emphasis
+ *
+ *   Accent / status
+ *     --uat-accent          interactive accent (buttons, focus rings)
+ *     --uat-accent-fg       text on accent backgrounds
+ *     --uat-accent-hover    hover state for accent
+ *     --uat-error           error text + border
+ *     --uat-success         success text + border
+ *
+ *   Typography
+ *     --uat-font-primary    sans-serif (UI body)
+ *     --uat-font-mono       monospace (links, IDs, headings option)
+ *
+ *   Shape / motion
+ *     --uat-radius          standard corner radius
+ *     --uat-radius-sm       small radius (chips, badges)
+ *     --uat-transition-fast quick UI transitions
+ */
+
+:root {
+  --uat-bg-deep: #0b0e10;
+  --uat-bg-surface: #14181b;
+  --uat-bg-secondary: #1c2025;
+  --uat-bg-hover: #232830;
+
+  --uat-border: #2a3138;
+  --uat-border-light: #1f2937;
+
+  --uat-text-primary: #e2e8f0;
+  --uat-text-muted: #94a3b8;
+  --uat-text-dim: #64748b;
+
+  --uat-accent: #06b6d4;
+  --uat-accent-fg: #0b0e10;
+  --uat-accent-hover: #22d3ee;
+  --uat-error: #f87171;
+  --uat-success: #34d399;
+
+  --uat-font-primary: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --uat-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --uat-radius: 10px;
+  --uat-radius-sm: 6px;
+  --uat-transition-fast: 0.15s ease;
+}
+
+/* ---------- LoginForm ---------- */
+
+.uat-login {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  background: var(--uat-bg-surface);
+  border: 1px solid var(--uat-border);
+  border-radius: var(--uat-radius);
+  font-family: var(--uat-font-primary);
+  color: var(--uat-text-primary);
+  max-width: 400px;
+  width: 100%;
+}
+
+.uat-login__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.uat-login__subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--uat-text-muted);
+}
+
+.uat-login__input {
+  font: inherit;
+  font-size: 15px;
+  padding: 10px 12px;
+  background: var(--uat-bg-deep);
+  color: var(--uat-text-primary);
+  border: 1px solid var(--uat-border);
+  border-radius: var(--uat-radius-sm);
+  transition: border-color var(--uat-transition-fast);
+}
+
+.uat-login__input:focus {
+  outline: none;
+  border-color: var(--uat-accent);
+}
+
+.uat-login__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.uat-login__button {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 16px;
+  background: var(--uat-accent);
+  color: var(--uat-accent-fg);
+  border: 1px solid var(--uat-accent);
+  border-radius: var(--uat-radius-sm);
+  cursor: pointer;
+  transition: background var(--uat-transition-fast);
+}
+
+.uat-login__button:hover:not(:disabled) {
+  background: var(--uat-accent-hover);
+}
+
+.uat-login__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.uat-login__error {
+  font-size: 14px;
+  color: var(--uat-error);
+}
+
+.uat-login__success {
+  font-size: 14px;
+  color: var(--uat-success);
+  line-height: 1.5;
+}
+
+/* ---------- AccountMenu ---------- */
+
+.uat-account {
+  position: relative;
+  font-family: var(--uat-font-primary);
+  color: var(--uat-text-primary);
+}
+
+.uat-account__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--uat-radius-sm);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--uat-transition-fast), border-color var(--uat-transition-fast);
+}
+
+.uat-account__trigger:hover {
+  background: var(--uat-bg-hover);
+  border-color: var(--uat-border-light);
+}
+
+.uat-account__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--uat-bg-secondary);
+  color: var(--uat-text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.uat-account__name {
+  font-size: 14px;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uat-account__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  background: var(--uat-bg-surface);
+  border: 1px solid var(--uat-border);
+  border-radius: var(--uat-radius);
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.uat-account__menu-header {
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--uat-border-light);
+  margin-bottom: 6px;
+}
+
+.uat-account__menu-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 2px 0;
+}
+
+.uat-account__menu-email {
+  font-size: 12px;
+  color: var(--uat-text-muted);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uat-account__menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--uat-text-primary);
+  font: inherit;
+  font-size: 13px;
+  border-radius: var(--uat-radius-sm);
+  cursor: pointer;
+  transition: background var(--uat-transition-fast);
+  text-decoration: none;
+}
+
+.uat-account__menu-item:hover {
+  background: var(--uat-bg-hover);
+}
+
+.uat-account__menu-item--danger {
+  color: var(--uat-error);
+}
+
+.uat-account__signin {
+  display: inline-block;
+  padding: 8px 14px;
+  background: var(--uat-accent);
+  color: var(--uat-accent-fg);
+  border-radius: var(--uat-radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* ---------- VerifyResult ---------- */
+
+.uat-verify {
+  font-family: var(--uat-font-primary);
+  color: var(--uat-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 24px;
+}
+
+.uat-verify__card {
+  background: var(--uat-bg-surface);
+  border: 1px solid var(--uat-border);
+  border-radius: var(--uat-radius);
+  padding: 32px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+
+.uat-verify__title {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.uat-verify__message {
+  margin: 0 0 16px 0;
+  color: var(--uat-text-muted);
+  line-height: 1.5;
+}
+
+.uat-verify--error .uat-verify__title {
+  color: var(--uat-error);
+}
+
+.uat-verify__action {
+  display: inline-block;
+  padding: 10px 18px;
+  background: var(--uat-accent);
+  color: var(--uat-accent-fg);
+  border-radius: var(--uat-radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+}

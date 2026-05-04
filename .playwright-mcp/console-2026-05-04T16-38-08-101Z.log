@@ -1,0 +1,12 @@
+[      37ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/@fs/Users/rick/Dev/usersAndTeamsP5/node_modules/.vite/deps/chunk-VKLKESE7.js?v=d0ee59a4:21550
+[      40ms] Error: Module "node:crypto" has been externalized for browser compatibility. Cannot access "node:crypto.createHash" in client code.  See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+    at Object.get (http://localhost:5173/@id/__vite-browser-external:node:crypto:3:11)
+    at http://localhost:5173/@fs/Users/rick/Dev/usersAndTeamsP5/src/auth/tokens.ts:1:137
+[   34697ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/main.tsx?t=1777912722688:0
+[   38494ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/main.tsx?t=1777912726571:0
+[   43860ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:559
+[   43861ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/:0
+[   45000ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/@fs/Users/rick/Dev/usersAndTeamsP5/node_modules/.vite/deps/chunk-373CG7ZK.js?v=f2096d9d:21548
+[   45028ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/auth/me:0
+[   45028ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/auth/me:0
+[   45031ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/auth/me:0
